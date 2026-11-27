@@ -69,34 +69,302 @@ pub struct ThumbnailData {
     pub thumbs: String,
 }
 
-#[derive(Serialize)]
-pub struct EpisodeThumbnail {
-    pub url: String,
-    pub image: String,
+#[derive(Clone)]
+struct KitsuCacheEntry {
+    value: String,
+    expires_at: Instant,
 }
 
-static EPISODE_THUMBNAIL_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-static EPISODE_THUMBNAIL_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+static KITSU_CACHE: OnceLock<Mutex<HashMap<String, KitsuCacheEntry>>> = OnceLock::new();
+static KITSU_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+static KITSU_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-fn cached_episode_thumbnail(url: &str) -> Option<String> {
-    EPISODE_THUMBNAIL_CACHE
+const KITSU_API: &str = "https://kitsu.io/api/edge";
+const KITSU_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const KITSU_PAGE_SIZE: u32 = 20;
+
+fn kitsu_cache_get(key: &str) -> Option<String> {
+    let mut cache = KITSU_CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
-        .ok()?
-        .get(url)
-        .cloned()
+        .ok()?;
+    let now = Instant::now();
+    let value = cache
+        .get(key)
+        .filter(|entry| entry.expires_at > now)
+        .map(|entry| entry.value.clone());
+    if value.is_none() {
+        cache.remove(key);
+    }
+    value
 }
 
-fn remember_episode_thumbnail(url: &str, image: &str) {
-    if let Ok(mut cache) = EPISODE_THUMBNAIL_CACHE
+fn kitsu_cache_put(key: String, value: String) {
+    if let Ok(mut cache) = KITSU_CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
     {
-        if cache.len() >= 240 {
+        let now = Instant::now();
+        cache.retain(|_, entry| entry.expires_at > now);
+        if cache.len() >= 1_000 {
             cache.clear();
         }
-        cache.insert(url.to_string(), image.to_string());
+        cache.insert(
+            key,
+            KitsuCacheEntry {
+                value,
+                expires_at: now + KITSU_CACHE_TTL,
+            },
+        );
     }
+}
+
+fn kitsu_client() -> &'static reqwest::Client {
+    KITSU_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent("Anime3rb/0.1.5")
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+async fn kitsu_json(url: &str) -> Result<Value, String> {
+    let mut last_error = String::from("Kitsu API request failed");
+    for attempt in 0..3 {
+        let response = match kitsu_client()
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/vnd.api+json")
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                last_error = error.to_string();
+                if attempt < 2 {
+                    tokio::time::sleep(Duration::from_millis(300 * (1 << attempt))).await;
+                    continue;
+                }
+                break;
+            }
+        };
+
+        let status = response.status();
+        if status.as_u16() == 429 {
+            last_error = "Kitsu rate limit reached (HTTP 429)".to_string();
+            if attempt < 2 {
+                let retry_after = response
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(1)
+                    .clamp(1, 30);
+                tokio::time::sleep(Duration::from_secs(retry_after)).await;
+                continue;
+            }
+            break;
+        }
+
+        if status.is_server_error() && attempt < 2 {
+            last_error = format!("Kitsu API returned HTTP {status}");
+            tokio::time::sleep(Duration::from_millis(300 * (1 << attempt))).await;
+            continue;
+        }
+
+        let response = response.error_for_status().map_err(|error| error.to_string())?;
+        return response
+            .json::<Value>()
+            .await
+            .map_err(|error| format!("Invalid Kitsu API response: {error}"));
+    }
+
+    Err(last_error)
+}
+
+fn normalize_kitsu_title(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn kitsu_match_score(item: &Value, wanted_name: &str, wanted_slug: &str) -> u8 {
+    let attributes = match item.get("attributes") {
+        Some(attributes) => attributes,
+        None => return 0,
+    };
+    let slug = s(attributes.get("slug"));
+    if !wanted_slug.is_empty() && normalize_kitsu_title(&slug) == wanted_slug {
+        return 3;
+    }
+
+    let canonical = s(attributes.get("canonicalTitle"));
+    if !wanted_name.is_empty() && normalize_kitsu_title(&canonical) == wanted_name {
+        return 2;
+    }
+
+    attributes
+        .get("titles")
+        .and_then(Value::as_object)
+        .map(|titles| {
+            titles
+                .values()
+                .filter_map(Value::as_str)
+                .any(|title| normalize_kitsu_title(title) == wanted_name)
+        })
+        .unwrap_or(false)
+        .then_some(2)
+        .unwrap_or(0)
+}
+
+fn valid_kitsu_image_url(value: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(value) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && matches!(url.host_str(), Some("media.kitsu.app" | "media.kitsu.io"))
+}
+
+fn kitsu_episode_page_offset(episode_number: u32) -> u32 {
+    episode_number.saturating_sub(1) / KITSU_PAGE_SIZE * KITSU_PAGE_SIZE
+}
+
+fn anime3rb_title_slug(anime_url: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(anime_url).map_err(|error| error.to_string())?;
+    let host = parsed.host_str().unwrap_or_default();
+    if parsed.scheme() != "https"
+        || !(host == "anime3rb.com" || host == "www.anime3rb.com")
+    {
+        return Err("Unsupported anime page URL".to_string());
+    }
+
+    let slug = parsed
+        .path()
+        .strip_prefix("/titles/")
+        .and_then(|path| path.split('/').next())
+        .unwrap_or_default();
+    if slug.is_empty() || !slug.chars().all(|character| character.is_ascii_alphanumeric() || character == '-') {
+        return Err("Invalid anime page URL".to_string());
+    }
+    Ok(slug.to_string())
+}
+
+async fn resolve_kitsu_anime_id(anime_url: &str, anime_name: &str) -> Result<String, String> {
+    let slug = anime3rb_title_slug(anime_url)?;
+    let wanted_name = normalize_kitsu_title(anime_name);
+    let wanted_slug = normalize_kitsu_title(&slug);
+    let cache_key = format!("anime-id:{slug}:{wanted_name}");
+    if let Some(cached) = kitsu_cache_get(&cache_key) {
+        return if cached == "!" {
+            Err("No exact Kitsu match was found for this anime".to_string())
+        } else {
+            Ok(cached)
+        };
+    }
+
+    let fallback_name = slug.replace('-', " ");
+    let search = urlencoding::encode(if anime_name.trim().is_empty() {
+        &fallback_name
+    } else {
+        anime_name
+    });
+    let endpoint = format!(
+        "{KITSU_API}/anime?filter%5Btext%5D={search}&page%5Blimit%5D=10"
+    );
+    let payload = kitsu_json(&endpoint).await?;
+    let records = payload
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Kitsu returned no anime results".to_string())?;
+
+    let best = records
+        .iter()
+        .map(|record| (kitsu_match_score(record, &wanted_name, &wanted_slug), record))
+        .filter(|(score, _)| *score > 0)
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, record)| s(record.get("id")))
+        .filter(|id| !id.is_empty());
+
+    match best {
+        Some(id) => {
+            kitsu_cache_put(cache_key, id.clone());
+            Ok(id)
+        }
+        None => {
+            kitsu_cache_put(cache_key, "!".to_string());
+            Err("No exact Kitsu match was found for this anime".to_string())
+        }
+    }
+}
+
+async fn kitsu_episode_page(
+    anime_id: &str,
+    episode_number: u32,
+) -> Result<HashMap<u32, String>, String> {
+    let offset = kitsu_episode_page_offset(episode_number);
+    let cache_key = format!("episode-page:{anime_id}:{offset}");
+    if let Some(cached) = kitsu_cache_get(&cache_key) {
+        if let Ok(images) = serde_json::from_str::<HashMap<u32, String>>(&cached) {
+            return Ok(images);
+        }
+    }
+
+    let endpoint = format!(
+        "{KITSU_API}/anime/{anime_id}/episodes?page%5Blimit%5D={KITSU_PAGE_SIZE}&page%5Boffset%5D={offset}"
+    );
+    let payload = kitsu_json(&endpoint).await?;
+    let mut images = HashMap::new();
+    if let Some(records) = payload.get("data").and_then(Value::as_array) {
+        for record in records {
+            let Some(attributes) = record.get("attributes") else {
+                continue;
+            };
+            let number = attributes
+                .get("number")
+                .and_then(Value::as_u64)
+                .or_else(|| attributes.get("relativeNumber").and_then(Value::as_u64))
+                .and_then(|number| u32::try_from(number).ok());
+            let image = attributes
+                .pointer("/thumbnail/original")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if let Some(number) = number {
+                if !image.is_empty() && valid_kitsu_image_url(image) {
+                    images.insert(number, image.to_string());
+                }
+            }
+        }
+    }
+
+    if let Ok(serialized) = serde_json::to_string(&images) {
+        kitsu_cache_put(cache_key, serialized);
+    }
+    Ok(images)
+}
+
+#[tauri::command]
+pub async fn episode_catalog_thumbnail(
+    anime_url: String,
+    anime_name: String,
+    episode_number: u32,
+) -> Result<String, String> {
+    if episode_number == 0 {
+        return Ok(String::new());
+    }
+
+    // One shared permit serializes catalog lookups across the episode grid and watch sidebar.
+    let semaphore = Arc::clone(
+        KITSU_SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1))),
+    );
+    let _permit = semaphore
+        .acquire_owned()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let anime_id = resolve_kitsu_anime_id(&anime_url, &anime_name).await?;
+    let images = kitsu_episode_page(&anime_id, episode_number).await?;
+    Ok(images.get(&episode_number).cloned().unwrap_or_default())
 }
 
 fn thumbnail_data(page: &str) -> ThumbnailData {
@@ -438,90 +706,6 @@ fn extract_episode_player_url(html: &str) -> Option<String> {
         .captures(html)
         .and_then(|cap| cap.get(1))
         .map(|value| value.as_str().replace("\\/", "/"))
-}
-
-async fn fetch_episode_thumbnail(url: &str) -> Result<String, String> {
-    let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
-    let host = parsed.host_str().unwrap_or_default();
-    if parsed.scheme() != "https"
-        || !(host == "anime3rb.com" || host == "www.anime3rb.com")
-        || !parsed.path().starts_with("/episode/")
-    {
-        return Err("Unsupported episode URL".to_string());
-    }
-
-    let html = unescape(&get(url).await?);
-    let player_url = extract_episode_player_url(&html)
-        .ok_or_else(|| "This episode has no player page".to_string())?;
-    let player = reqwest::Url::parse(&player_url).map_err(|error| error.to_string())?;
-    let player_host = player.host_str().unwrap_or_default();
-    if player.scheme() != "https"
-        || !(player_host == "vid3rb.com" || player_host.ends_with(".vid3rb.com"))
-    {
-        return Err("Unsupported player page URL".to_string());
-    }
-
-    // The player itself uses this per-episode poster. Try the same lightweight lookup first;
-    // only use the retrying metadata helper when the poster is not present on the first response.
-    let player_page = get(&player_url).await.unwrap_or_default();
-    let poster = thumbnail_data(&player_page).poster;
-    if !poster.is_empty() {
-        return Ok(poster);
-    }
-
-    let thumbnails = thumbnail_info(player_url).await?;
-    if thumbnails.poster.is_empty() {
-        return Err("This episode has no thumbnail image".to_string());
-    }
-    Ok(thumbnails.poster)
-}
-
-#[tauri::command]
-pub async fn episode_thumbnails(urls: Vec<String>) -> Result<Vec<EpisodeThumbnail>, String> {
-    const MAX_BATCH: usize = 24;
-    const MAX_CONCURRENT: usize = 4;
-
-    if urls.len() > MAX_BATCH {
-        return Err(format!("A maximum of {MAX_BATCH} episode thumbnails can be requested at once"));
-    }
-
-    // Share one semaphore across command invocations so lazy sidebar cards cannot
-    // multiply the number of concurrent requests while the user scrolls quickly.
-    let semaphore = Arc::clone(
-        EPISODE_THUMBNAIL_SEMAPHORE
-            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT))),
-    );
-    let mut tasks = tokio::task::JoinSet::new();
-
-    for url in urls {
-        let semaphore = Arc::clone(&semaphore);
-        tasks.spawn(async move {
-            let _permit = match semaphore.acquire_owned().await {
-                Ok(permit) => permit,
-                Err(_) => return EpisodeThumbnail { url, image: String::new() },
-            };
-
-            let image = match cached_episode_thumbnail(&url) {
-                Some(image) => image,
-                None => match fetch_episode_thumbnail(&url).await {
-                    Ok(image) => {
-                        remember_episode_thumbnail(&url, &image);
-                        image
-                    }
-                    Err(_) => String::new(),
-                },
-            };
-
-            EpisodeThumbnail { url, image }
-        });
-    }
-
-    let mut results = Vec::new();
-    while let Some(result) = tasks.join_next().await {
-        results.push(result.map_err(|error| format!("Episode thumbnail task failed: {error}"))?);
-    }
-
-    Ok(results)
 }
 
 #[tauri::command]
