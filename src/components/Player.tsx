@@ -6,6 +6,7 @@ import {
   Progress,
   formatTime,
   loadCues,
+  thumbnailInfo,
   episode as fetchEpisode,
   progressFor,
   saveProgress,
@@ -37,6 +38,11 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
   const pointerType = useRef("");
   const latestLocked = useRef(false);
+  const activeEpisodeUrl = useRef(url);
+  const dataEpisodeUrl = useRef("");
+  const cueLoadingFor = useRef<string | null>(null);
+  const cueRetryAt = useRef(0);
+  activeEpisodeUrl.current = url;
 
   const [data, setData] = useState<EpisodeData | null>(null);
   const [error, setError] = useState("");
@@ -78,11 +84,15 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     setError("");
     setSource(0);
     setCues([]);
+    dataEpisodeUrl.current = "";
+    cueLoadingFor.current = null;
+    cueRetryAt.current = 0;
     setRanges([]);
     setContentEnd(0);
     fetchEpisode(url)
       .then((result) => {
         if (!live) return;
+        dataEpisodeUrl.current = url;
         setData(result);
         const freeSources = result.sources
           .map((item, index) => ({ item, index }))
@@ -95,13 +105,63 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           candidates[0]?.index ?? 0
         );
         setSource(best);
-        loadCues(result.thumbs).then((list) => live && setCues(list));
       })
       .catch((reason) => live && setError(String(reason)));
     return () => {
       live = false;
     };
   }, [url]);
+
+  const ensureCues = useCallback(async () => {
+    const episodeUrl = url;
+    const episodeData = data;
+    if (
+      !episodeData ||
+      dataEpisodeUrl.current !== episodeUrl ||
+      activeEpisodeUrl.current !== episodeUrl ||
+      cueLoadingFor.current === episodeUrl ||
+      cues.length > 0 ||
+      Date.now() < cueRetryAt.current
+    ) return;
+
+    cueLoadingFor.current = episodeUrl;
+    try {
+      let thumbnailUrl = episodeData.thumbs;
+      if (!thumbnailUrl && episodeData.thumbnail_page) {
+        const metadata = await thumbnailInfo(episodeData.thumbnail_page);
+        if (activeEpisodeUrl.current !== episodeUrl || dataEpisodeUrl.current !== episodeUrl) return;
+        if (metadata.poster || metadata.thumbs) {
+          setData((currentData) => currentData && dataEpisodeUrl.current === episodeUrl
+            ? {
+                ...currentData,
+                poster: metadata.poster || currentData.poster,
+                thumbs: metadata.thumbs || currentData.thumbs,
+              }
+            : currentData);
+        }
+        thumbnailUrl = metadata.thumbs;
+      }
+
+      if (thumbnailUrl) {
+        const list = await loadCues(thumbnailUrl);
+        if (activeEpisodeUrl.current !== episodeUrl || dataEpisodeUrl.current !== episodeUrl) return;
+        if (list.length) {
+          setCues(list);
+          cueRetryAt.current = 0;
+          return;
+        }
+      }
+      cueRetryAt.current = Date.now() + 8000;
+    } catch {
+      cueRetryAt.current = Date.now() + 4000;
+    } finally {
+      if (cueLoadingFor.current === episodeUrl) cueLoadingFor.current = null;
+    }
+  }, [data, cues.length, url]);
+
+  useEffect(() => {
+    if (data && dataEpisodeUrl.current === url) void ensureCues();
+  }, [data?.thumbs, data?.thumbnail_page, ensureCues, url]);
 
   useEffect(() => {
     if (!data) return;
@@ -539,6 +599,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           dir="ltr"
           ref={bar}
           onPointerMove={(event) => {
+            if (!cues.length) void ensureCues();
             const rect = event.currentTarget.getBoundingClientRect();
             if (!rect.width) return;
             const ratio = Math.min(Math.max(0, (event.clientX - rect.left) / rect.width), 1);
