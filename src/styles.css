@@ -1306,7 +1306,7 @@ input { font: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .image-placeholder, .skeleton-poster, .skeleton-line, .skeleton-heading, .skeleton-detail-poster, .skeleton-meta, .skeleton-copy, .skeleton-action, .episode-skeleton i, .episode-skeleton span, .watch-player-skeleton { animation: none; }
+  .image-placeholder, .skeleton-poster, .skeleton-line, .skeleton-heading, .skeleton-detail-poster, .skeleton-meta, .skeleton-copy, .skeleton-action, .episode-skeleton i, .episode-skeleton span, .episode-grid-skeleton, .watch-player-skeleton { animation: none; }
   .ep-card.is-grid::after,
   .ep-card.is-grid .ep-text,
   .ep-card.is-grid .ep-thumb img,
