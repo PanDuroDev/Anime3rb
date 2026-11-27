@@ -507,7 +507,7 @@ input { font: inherit; }
 .player .seek,
 .player .row {
   max-height: 48px;
-  overflow: hidden;
+  overflow: visible;
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -524,6 +524,7 @@ input { font: inherit; }
 .player.hide .seek,
 .player.hide .row {
   max-height: 0;
+  overflow: hidden;
   margin: 0;
   opacity: 0;
   visibility: hidden;
@@ -786,9 +787,10 @@ input { font: inherit; }
 }
 .grow { flex: 1; }
 
-.settings { position: relative; }
+.settings { position: relative; z-index: 5; }
 
 .panel {
+  z-index: 8;
   position: absolute;
   inset-inline-end: 0;
   bottom: calc(100% + 20px);
@@ -857,6 +859,14 @@ input { font: inherit; }
   font-weight: 600;
 }
 .option.is-premium svg { margin-inline-start: 0; }
+
+.panel-empty {
+  display: block;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
 
 .center {
   position: absolute;

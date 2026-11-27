@@ -302,6 +302,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
+      if (latestLocked.current) return;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (event.key === " " || event.key === "k") {
         event.preventDefault();
@@ -366,9 +367,10 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (latestLocked.current) return;
     pointerType.current = event.pointerType;
     wake();
-    if (event.pointerType !== "touch" || locked) return;
+    if (event.pointerType !== "touch") return;
 
     const target = event.target as HTMLElement;
     if (target.closest("button, input, .seek, .controls")) {
@@ -395,6 +397,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (latestLocked.current) return;
     const gesture = touchGesture.current;
     if (event.pointerType === "touch" && gesture?.pointerId === event.pointerId && !locked) {
       const delta = gesture.startY - event.clientY;
@@ -431,7 +434,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
         playsInline
         poster={data?.poster}
         onClick={() => {
-          if (pointerType.current !== "touch") toggle();
+          if (!latestLocked.current && pointerType.current !== "touch") toggle();
         }}
       />
 
@@ -512,8 +515,8 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           }}
         >
           <div className="track">
-            <i style={{ width: `${duration ? (time / duration) * 100 : 0}%` }} />
             <b style={{ width: `${duration ? (buffered / duration) * 100 : 0}%` }} />
+            <i style={{ width: `${duration ? (time / duration) * 100 : 0}%` }} />
           </div>
           {hover && hoverCue && (
             <div className="hover-frame" style={{ left: hoverLeft }} aria-hidden="true">
@@ -628,7 +631,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
             </button>
             <div className="panel" hidden={!menu}>
               <div className="panel-label">Quality</div>
-              {data?.sources.map((item, index) => (
+              {data?.sources.length ? data.sources.map((item, index) => (
                 <button
                   key={item.src}
                   className={`option${index === source ? " is-selected" : ""}${item.premium ? " is-premium" : ""}`}
@@ -652,7 +655,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
                   {item.premium && <span className="premium-label">Premium</span>}
                   <Icon name="check" size={16} />
                 </button>
-              ))}
+              )) : <span className="panel-empty">No quality sources available</span>}
             </div>
           </div>
           <button className="btn" type="button" onClick={lockControls} aria-label="Lock controls" aria-pressed={locked} title="Lock controls">

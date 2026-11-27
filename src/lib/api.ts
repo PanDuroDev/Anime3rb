@@ -35,31 +35,36 @@ export const formatTime = (seconds: number) => {
 
 export type Cue = { start: number; end: number; file: string; x: number; y: number; w: number; h: number };
 
-/** The player ships a sprite sheet of frames as a VTT: `file#xywh=x,y,w,h`. */
+/** Parse WebVTT sprite references in the form `file#xywh=x,y,w,h`. */
+export function parseCueVtt(text: string, sourceUrl: string): Cue[] {
+  const cues: Cue[] = [];
+  const timestamp = /^(\d{1,}:\d{2}(?::\d{2})?\.\d{3})\s*-->\s*(\d{1,}:\d{2}(?::\d{2})?\.\d{3})/;
+  for (const block of text.replace(/^\uFEFF/, "").split(/\r?\n\s*\r?\n/)) {
+    const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const timeLine = lines.find((line) => timestamp.test(line));
+    if (!timeLine) continue;
+    const times = timeLine.match(timestamp);
+    const reference = lines.find((line) => line.includes("#xywh="));
+    if (!times || !reference) continue;
+    const [file, coordinates] = reference.split("#xywh=");
+    const values = coordinates?.split(",").map(Number);
+    if (!file || !values || values.length !== 4 || values.some((value) => !Number.isFinite(value))) continue;
+    const [x, y, w, h] = values;
+    if (w <= 0 || h <= 0) continue;
+    try {
+      cues.push({ start: toSeconds(times[1]), end: toSeconds(times[2]), file: new URL(file, sourceUrl).toString(), x, y, w, h });
+    } catch { continue; }
+  }
+  return cues.sort((a, b) => a.start - b.start);
+}
+
 export async function loadCues(url: string): Promise<Cue[]> {
   if (!url) return [];
   try {
-    const text = await (await fetch(url)).text();
-    const base = url.slice(0, url.lastIndexOf("/") + 1);
-    const cues: Cue[] = [];
-    for (const block of text.split(/\r?\n\r?\n/)) {
-      const match = block.match(/(\d+(?::\d+){1,2}\.\d{3})\s*-->\s*(\d+(?::\d+){1,2}\.\d{3})[\s\S]*?([\w.-]+\.jpe?g)#xywh=(\d+),(\d+),(\d+),(\d+)/);
-      if (!match) continue;
-      const [, from, to, file, x, y, w, h] = match;
-      cues.push({
-        start: toSeconds(from),
-        end: toSeconds(to),
-        file: base + file,
-        x: Number(x),
-        y: Number(y),
-        w: Number(w),
-        h: Number(h),
-      });
-    }
-    return cues;
-  } catch {
-    return [];
-  }
+    const response = await fetch(url, { cache: "force-cache" });
+    if (!response.ok) return [];
+    return parseCueVtt(await response.text(), url);
+  } catch { return []; }
 }
 
 const toSeconds = (stamp: string) => {

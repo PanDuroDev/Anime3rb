@@ -42,11 +42,11 @@ export const iconPaths: Record<string, { viewBox: string; body: string }> = {
   },
   "lock": {
     "viewBox": "0 0 24 24",
-    "body": "<rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/>"
+    "body": "<path fill=\"currentColor\" d=\"M17 8h-1V6a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2ZM10 6a2 2 0 1 1 4 0v2h-4V6Zm2 11a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z\"/>"
   },
   "unlock": {
     "viewBox": "0 0 24 24",
-    "body": "<rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 9.5-2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/>"
+    "body": "<path fill=\"currentColor\" d=\"M17 8h-1V6a4 4 0 0 0-7.9-1h2.1a2 2 0 0 1 3.8 1v2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2Zm-5 9a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z\"/>"
   },
   "check": {
     "viewBox": "0 0 24 24",
