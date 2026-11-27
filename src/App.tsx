@@ -178,7 +178,7 @@ function CardSkeletonGrid({ count }: { count: number }) {
 
 function HomeSkeleton() {
   return (
-    <div className="home-skeleton" aria-label="Loading home page">
+    <div className="home-skeleton" role="status" aria-label="Loading home page">
       {[0, 1, 2].map((row) => (
         <section className="rail" key={row} aria-hidden="true">
           <div className="section-head"><span className="skeleton-heading" /></div>
@@ -361,7 +361,7 @@ function SearchView({ query, open }: { query: string; open: (url: string) => voi
 
   if (error) return <ErrorState message={error} />;
   if (!items) return <section className="results"><div className="section-head"><h2>Results for “{query}”</h2></div><CardSkeletonGrid count={10} /></section>;
-  if (!items.length) return <div className="empty-state"><span className="empty-state-mark"><Icon name="refresh" size={22} /></span><h2>No results found</h2><p>Try another title or check the spelling.</p></div>;
+  if (!items.length) return <div className="empty-state"><h2>No results found</h2><p>Try another title or check the spelling.</p></div>;
 
   return (
     <section className="results">
