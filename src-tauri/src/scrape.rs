@@ -452,6 +452,22 @@ async fn fetch_episode_thumbnail(url: &str) -> Result<String, String> {
     let html = unescape(&get(url).await?);
     let player_url = extract_episode_player_url(&html)
         .ok_or_else(|| "This episode has no player page".to_string())?;
+    let player = reqwest::Url::parse(&player_url).map_err(|error| error.to_string())?;
+    let player_host = player.host_str().unwrap_or_default();
+    if player.scheme() != "https"
+        || !(player_host == "vid3rb.com" || player_host.ends_with(".vid3rb.com"))
+    {
+        return Err("Unsupported player page URL".to_string());
+    }
+
+    // The player itself uses this per-episode poster. Try the same lightweight lookup first;
+    // only use the retrying metadata helper when the poster is not present on the first response.
+    let player_page = get(&player_url).await.unwrap_or_default();
+    let poster = thumbnail_data(&player_page).poster;
+    if !poster.is_empty() {
+        return Ok(poster);
+    }
+
     let thumbnails = thumbnail_info(player_url).await?;
     if thumbnails.poster.is_empty() {
         return Err("This episode has no thumbnail image".to_string());
