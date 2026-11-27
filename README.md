@@ -56,7 +56,8 @@ the release page:
 - Android: universal debug APK (signed with the debug key, installable for testing)
 
 For a signed release APK, add a keystore to the Android project and configure it in
-`src-tauri/gen/android/app/build.gradle.kts`.
+`src-tauri/gen/android/app/build.gradle.kts`. The CI APKs are per-ABI debug builds, so pick the
+`arm64-v8a` one for a normal phone.
 
 ## Notes
 

@@ -43,6 +43,8 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -71,9 +73,14 @@ jobs:
 
       - run: npm run tauri android init
 
-      - run: npm run tauri android build -- --apk --debug
+      - run: npm run tauri android build -- --apk --debug --split-per-abi
 
       - uses: actions/upload-artifact@v4
         with:
           name: anime3rb-android
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
