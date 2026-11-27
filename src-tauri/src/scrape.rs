@@ -75,15 +75,22 @@ struct KitsuCacheEntry {
     expires_at: Instant,
 }
 
-static KITSU_CACHE: OnceLock<Mutex<HashMap<String, KitsuCacheEntry>>> = OnceLock::new();
-static KITSU_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+static ARTWORK_CACHE: OnceLock<Mutex<HashMap<String, KitsuCacheEntry>>> = OnceLock::new();
+static EPISODE_ARTWORK_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static KITSU_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static ANIZIP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static NOGITSU_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static NOGITSU_RATE_LOCK: OnceLock<tokio::sync::Mutex<Option<Instant>>> = OnceLock::new();
 
 const KITSU_API: &str = "https://kitsu.io/api/edge";
-const KITSU_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const ANIZIP_API: &str = "https://api.ani.zip";
+const NOGITSU_API: &str = "https://api.nogitsu.com/v1";
+const ARTWORK_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const KITSU_PAGE_SIZE: u32 = 20;
+const NOGITSU_PAGE_SIZE: u32 = 24;
+const NOGITSU_MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(650);
 
-fn kitsu_cache_get(key: &str) -> Option<String> {
+fn artwork_cache_get(key: &str) -> Option<String> {
     let mut cache = KITSU_CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
@@ -99,7 +106,7 @@ fn kitsu_cache_get(key: &str) -> Option<String> {
     value
 }
 
-fn kitsu_cache_put(key: String, value: String) {
+fn artwork_cache_put(key: String, value: String) {
     if let Ok(mut cache) = KITSU_CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
@@ -324,6 +331,320 @@ fn parse_kitsu_episode_images(payload: &Value) -> HashMap<u32, String> {
     images
 }
 
+async fn resolve_kitsu_anilist_id(kitsu_id: &str) -> Result<String, String> {
+    let cache_key = format!("anilist-id:{kitsu_id}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        return if cached == "!" {
+            Err("Kitsu has no AniList mapping for this anime".to_string())
+        } else {
+            Ok(cached)
+        };
+    }
+
+    let endpoint = format!("{KITSU_API}/anime/{kitsu_id}/mappings?page%5Blimit%5D=20");
+    let payload = kitsu_json(&endpoint).await?;
+    let id = payload
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|record| s(record.pointer("/attributes/externalSite")) == "anilist/anime")
+        .map(|record| s(record.pointer("/attributes/externalId")))
+        .filter(|value| !value.is_empty() && value.chars().all(|character| character.is_ascii_digit()));
+
+    match id {
+        Some(id) => {
+            artwork_cache_put(cache_key, id.clone());
+            Ok(id)
+        }
+        None => {
+            artwork_cache_put(cache_key, "!".to_string());
+            Err("Kitsu has no AniList mapping for this anime".to_string())
+        }
+    }
+}
+
+fn valid_episode_artwork_url(value: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(value) else {
+        return false;
+    };
+    if url.scheme() != "https" {
+        return false;
+    }
+    matches!(
+        url.host_str(),
+        Some(
+            "media.kitsu.app"
+                | "media.kitsu.io"
+                | "artworks.thetvdb.com"
+                | "image.tmdb.org"
+                | "cdn.anidb.net"
+                | "cdn.nogitsu.com"
+        )
+    )
+}
+
+fn parse_anizip_episode_images(payload: &Value) -> HashMap<u32, String> {
+    let mut images = HashMap::new();
+    let Some(episodes) = payload.get("episodes").and_then(Value::as_object) else {
+        return images;
+    };
+
+    for (key, episode) in episodes {
+        let number = episode
+            .get("absoluteEpisodeNumber")
+            .and_then(Value::as_u64)
+            .or_else(|| key.parse::<u64>().ok())
+            .or_else(|| episode.get("episodeNumber").and_then(Value::as_u64))
+            .and_then(|number| u32::try_from(number).ok());
+        let image = s(episode.get("image"));
+        if let Some(number) = number {
+            if number > 0 && !image.is_empty() && valid_episode_artwork_url(&image) {
+                images.insert(number, image);
+            }
+        }
+    }
+    images
+}
+
+async fn anizip_episode_images(anilist_id: &str) -> Result<HashMap<u32, String>, String> {
+    let cache_key = format!("anizip-episodes:{anilist_id}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        if let Ok(images) = serde_json::from_str::<HashMap<u32, String>>(&cached) {
+            return Ok(images);
+        }
+    }
+
+    let endpoint = format!("{ANIZIP_API}/mappings?anilist_id={anilist_id}");
+    let response = ANIZIP_CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .user_agent("Anime3rb/0.1.5")
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new())
+        })
+        .get(&endpoint)
+        .send()
+        .await
+        .map_err(|error| format!("AniZip request failed: {error}"))?;
+
+    if response.status().as_u16() == 404 {
+        artwork_cache_put(cache_key, "{}".to_string());
+        return Ok(HashMap::new());
+    }
+    if response.status().as_u16() == 429 {
+        let delay = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(2)
+            .clamp(1, 30);
+        tokio::time::sleep(Duration::from_secs(delay)).await;
+        return Err("AniZip rate limit reached (HTTP 429)".to_string());
+    }
+
+    let response = response.error_for_status().map_err(|error| error.to_string())?;
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("Invalid AniZip response: {error}"))?;
+    let images = parse_anizip_episode_images(&payload);
+    if let Ok(serialized) = serde_json::to_string(&images) {
+        artwork_cache_put(cache_key, serialized);
+    }
+    Ok(images)
+}
+
+fn normalize_artwork_title(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn nogitsu_match_score(item: &Value, wanted_name: &str, wanted_slug: &str) -> u8 {
+    let slug = s(item.get("slug"));
+    if !wanted_slug.is_empty() && normalize_artwork_title(&slug) == wanted_slug {
+        return 3;
+    }
+
+    ["title", "romanizedTitle", "nativeTitle"]
+        .iter()
+        .map(|field| s(item.get(*field)))
+        .any(|title| !wanted_name.is_empty() && normalize_artwork_title(&title) == wanted_name)
+        .then_some(2)
+        .unwrap_or(0)
+}
+
+async fn wait_for_nogitsu_slot() {
+    let limiter = NOGITSU_RATE_LOCK.get_or_init(|| tokio::sync::Mutex::new(None));
+    let mut last_request = limiter.lock().await;
+    if let Some(previous) = *last_request {
+        let elapsed = previous.elapsed();
+        if elapsed < NOGITSU_MIN_REQUEST_INTERVAL {
+            tokio::time::sleep(NOGITSU_MIN_REQUEST_INTERVAL - elapsed).await;
+        }
+    }
+    *last_request = Some(Instant::now());
+}
+
+async fn nogitsu_json(url: &str) -> Result<Value, String> {
+    let client = NOGITSU_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent("Anime3rb/0.1.5 (episode artwork)")
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    });
+
+    let mut last_error = String::from("Nogitsu API request failed");
+    for attempt in 0..3 {
+        wait_for_nogitsu_slot().await;
+        let response = match client.get(url).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                last_error = error.to_string();
+                if attempt < 2 {
+                    tokio::time::sleep(Duration::from_millis(400 * (attempt + 1))).await;
+                    continue;
+                }
+                break;
+            }
+        };
+
+        let status = response.status();
+        if status.as_u16() == 429 {
+            last_error = "Nogitsu rate limit reached (HTTP 429)".to_string();
+            if attempt < 2 {
+                let delay = response
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .or_else(|| {
+                        response
+                            .headers()
+                            .get("RateLimit-Reset")
+                            .and_then(|value| value.to_str().ok())
+                            .and_then(|value| value.parse::<u64>().ok())
+                    })
+                    .unwrap_or(2)
+                    .clamp(1, 60);
+                tokio::time::sleep(Duration::from_secs(delay)).await;
+                continue;
+            }
+            break;
+        }
+
+        if status.is_server_error() && attempt < 2 {
+            last_error = format!("Nogitsu API returned HTTP {status}");
+            tokio::time::sleep(Duration::from_millis(400 * (attempt + 1))).await;
+            continue;
+        }
+
+        let response = response.error_for_status().map_err(|error| error.to_string())?;
+        return response
+            .json::<Value>()
+            .await
+            .map_err(|error| format!("Invalid Nogitsu response: {error}"));
+    }
+    Err(last_error)
+}
+
+async fn resolve_nogitsu_work_id(
+    anime_url: &str,
+    anime_name: &str,
+) -> Result<String, String> {
+    let slug = anime3rb_title_slug(anime_url)?;
+    let wanted_name = normalize_artwork_title(anime_name);
+    let wanted_slug = normalize_artwork_title(&slug);
+    let cache_key = format!("nogitsu-work:{slug}:{wanted_name}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        return if cached == "!" {
+            Err("No exact Nogitsu anime match was found".to_string())
+        } else {
+            Ok(cached)
+        };
+    }
+
+    let fallback_name = slug.replace('-', " ");
+    let query = urlencoding::encode(if anime_name.trim().is_empty() {
+        &fallback_name
+    } else {
+        anime_name
+    });
+    let endpoint = format!("{NOGITSU_API}/search/works?q={query}&medium=anime&limit=10");
+    let payload = nogitsu_json(&endpoint).await?;
+    let best = payload
+        .get("hits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| (nogitsu_match_score(item, &wanted_name, &wanted_slug), item))
+        .filter(|(score, _)| *score > 0)
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, item)| s(item.get("id")))
+        .filter(|id| !id.is_empty());
+
+    match best {
+        Some(id) => {
+            artwork_cache_put(cache_key, id.clone());
+            Ok(id)
+        }
+        None => {
+            artwork_cache_put(cache_key, "!".to_string());
+            Err("No exact Nogitsu anime match was found".to_string())
+        }
+    }
+}
+
+fn parse_nogitsu_unit_images(payload: &Value) -> HashMap<u32, String> {
+    let mut images = HashMap::new();
+    if let Some(items) = payload.get("items").and_then(Value::as_array) {
+        for item in items {
+            let number = item
+                .get("number")
+                .and_then(Value::as_u64)
+                .and_then(|number| u32::try_from(number).ok());
+            let image = s(item.pointer("/image/url"));
+            let trusted = reqwest::Url::parse(&image)
+                .map(|url| {
+                    url.scheme() == "https" && url.host_str() == Some("cdn.nogitsu.com")
+                })
+                .unwrap_or(false);
+            if let Some(number) = number {
+                if number > 0 && !image.is_empty() && trusted {
+                    images.insert(number, image);
+                }
+            }
+        }
+    }
+    images
+}
+
+async fn nogitsu_episode_page(
+    work_id: &str,
+    episode_number: u32,
+) -> Result<HashMap<u32, String>, String> {
+    let first = (episode_number.saturating_sub(1) / NOGITSU_PAGE_SIZE) * NOGITSU_PAGE_SIZE + 1;
+    let last = first + NOGITSU_PAGE_SIZE - 1;
+    let cache_key = format!("nogitsu-unit-images:{work_id}:{first}-{last}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        if let Ok(images) = serde_json::from_str::<HashMap<u32, String>>(&cached) {
+            return Ok(images);
+        }
+    }
+
+    let endpoint = format!("{NOGITSU_API}/works/{work_id}/unit-images?from={first}&to={last}");
+    let payload = nogitsu_json(&endpoint).await?;
+    let images = parse_nogitsu_unit_images(&payload);
+    if let Ok(serialized) = serde_json::to_string(&images) {
+        artwork_cache_put(cache_key, serialized);
+    }
+    Ok(images)
+}
+
 async fn kitsu_episode_page(
     anime_id: &str,
     episode_number: u32,
@@ -358,18 +679,44 @@ pub async fn episode_catalog_thumbnail(
         return Ok(String::new());
     }
 
-    // One shared permit serializes catalog lookups across the episode grid and watch sidebar.
+    // One shared permit prevents scroll bursts from multiplying metadata API traffic.
     let semaphore = Arc::clone(
-        KITSU_SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1))),
+        EPISODE_ARTWORK_SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1))),
     );
     let _permit = semaphore
         .acquire_owned()
         .await
         .map_err(|error| error.to_string())?;
 
-    let anime_id = resolve_kitsu_anime_id(&anime_url, &anime_name).await?;
-    let images = kitsu_episode_page(&anime_id, episode_number).await?;
-    Ok(images.get(&episode_number).cloned().unwrap_or_default())
+    // 1) Kitsu: public episode thumbnails, fetched 20 at a time.
+    if let Ok(kitsu_id) = resolve_kitsu_anime_id(&anime_url, &anime_name).await {
+        if let Ok(images) = kitsu_episode_page(&kitsu_id, episode_number).await {
+            if let Some(image) = images.get(&episode_number) {
+                return Ok(image.clone());
+            }
+        }
+
+        // 2) AniZip: one cached AniList mapping supplies episode stills from TVDB/AniDB.
+        if let Ok(anilist_id) = resolve_kitsu_anilist_id(&kitsu_id).await {
+            if let Ok(images) = anizip_episode_images(&anilist_id).await {
+                if let Some(image) = images.get(&episode_number) {
+                    return Ok(image.clone());
+                }
+            }
+        }
+    }
+
+    // 3) Nogitsu: aggregate stills from independent providers such as TVDB and TMDB.
+    if let Ok(work_id) = resolve_nogitsu_work_id(&anime_url, &anime_name).await {
+        if let Ok(images) = nogitsu_episode_page(&work_id, episode_number).await {
+            if let Some(image) = images.get(&episode_number) {
+                return Ok(image.clone());
+            }
+        }
+    }
+
+    // Keep the placeholder when every provider lacks a still. Never query Anime3rb here.
+    Ok(String::new())
 }
 
 fn thumbnail_data(page: &str) -> ThumbnailData {
@@ -1264,5 +1611,79 @@ mod kitsu_thumbnail_tests {
         );
         assert!(super::anime3rb_title_slug("https://evil.example/titles/one-piece").is_err());
         assert!(super::anime3rb_title_slug("https://anime3rb.com/episode/1").is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod external_artwork_tests {
+    use serde_json::json;
+
+    #[test]
+    fn anizip_prefers_absolute_episode_number_and_rejects_untrusted_hosts() {
+        let payload = json!({
+            "episodes": {
+                "1": {
+                    "episodeNumber": 1,
+                    "absoluteEpisodeNumber": 101,
+                    "image": "https://artworks.thetvdb.com/still-101.jpg"
+                },
+                "2": {
+                    "episodeNumber": 2,
+                    "image": "https://image.tmdb.org/t/p/w500/still-2.jpg"
+                },
+                "3": {
+                    "episodeNumber": 3,
+                    "image": "https://evil.example/still-3.jpg"
+                }
+            }
+        });
+        let images = super::parse_anizip_episode_images(&payload);
+        assert_eq!(
+            images.get(&101).map(String::as_str),
+            Some("https://artworks.thetvdb.com/still-101.jpg")
+        );
+        assert_eq!(
+            images.get(&2).map(String::as_str),
+            Some("https://image.tmdb.org/t/p/w500/still-2.jpg")
+        );
+        assert!(!images.contains_key(&3));
+    }
+
+    #[test]
+    fn exact_nogitsu_matching_does_not_select_a_related_movie() {
+        let wanted_name = super::normalize_artwork_title("One Piece");
+        let wanted_slug = super::normalize_artwork_title("one-piece");
+        let series = json!({ "slug": "one-piece", "title": "ONE PIECE" });
+        let film = json!({ "slug": "one-piece-film-z", "title": "One Piece Film: Z" });
+        assert_eq!(super::nogitsu_match_score(&series, &wanted_name, &wanted_slug), 3);
+        assert_eq!(super::nogitsu_match_score(&film, &wanted_name, &wanted_slug), 0);
+    }
+
+    #[test]
+    fn parses_only_nogitsu_unit_images_from_their_cdn() {
+        let payload = json!({
+            "items": [
+                {
+                    "number": 1,
+                    "image": { "url": "https://cdn.nogitsu.com/images/unit/still/one-piece-1.jpg" }
+                },
+                {
+                    "number": 2,
+                    "image": { "url": "https://evil.example/image.jpg" }
+                },
+                {
+                    "number": 3,
+                    "image": null
+                }
+            ]
+        });
+        let images = super::parse_nogitsu_unit_images(&payload);
+        assert_eq!(
+            images.get(&1).map(String::as_str),
+            Some("https://cdn.nogitsu.com/images/unit/still/one-piece-1.jpg")
+        );
+        assert!(!images.contains_key(&2));
+        assert!(!images.contains_key(&3));
     }
 }
