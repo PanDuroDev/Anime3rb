@@ -650,8 +650,8 @@ input { font: inherit; }
 .player.hide .chapters i { background: none !important; }
 .player.hide .pills { pointer-events: auto; }
 .player.hide .pill { background: transparent !important; color: var(--text); box-shadow: none !important; }
-.player.hide,
-.player.hide * { cursor: none !important; }
+.player.cursor-hidden,
+.player.cursor-hidden * { cursor: none !important; }
 
 .player.is-locked .controls,
 .player.is-locked .center {
