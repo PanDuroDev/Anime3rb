@@ -28,9 +28,10 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const bar = useRef<HTMLDivElement>(null);
   const idle = useRef<number | null>(null);
   const reveal = useRef<number | null>(null);
+  const cursorIdle = useRef<number | null>(null);
   const latestHidden = useRef(false);
   const latestPillsVisible = useRef(false);
-  const wakeControls = useRef<(force?: boolean) => void>(() => {});
+  const wakeControls = useRef<(force?: boolean, pointerActivity?: boolean) => void>(() => {});
   const lastTouch = useRef<{ at: number; side: "left" | "right" } | null>(null);
   const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
   const pointerType = useRef("");
@@ -56,6 +57,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   });
   const [menu, setMenu] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [cursorHidden, setCursorHidden] = useState(false);
   const [locked, setLocked] = useState(false);
   const [pipSupported, setPipSupported] = useState(false);
   const [theater, setTheater] = useState(false);
@@ -249,13 +251,24 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   latestPillsVisible.current = Boolean(skipNow || showNext);
 
   // Match Skin: keep a visible Skip / Next pill clickable before restoring the full bar.
-  const wake = useCallback((force = false) => {
+  const wake = useCallback((force = false, pointerActivity = true) => {
     if (latestLocked.current && !force) return;
+    if (pointerActivity) {
+      setCursorHidden(false);
+      if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
+      cursorIdle.current = null;
+      if (!video.current?.paused) {
+        cursorIdle.current = window.setTimeout(() => {
+          cursorIdle.current = null;
+          if (!video.current?.paused && !latestLocked.current) setCursorHidden(true);
+        }, 2500);
+      }
+    }
     if (!force && latestHidden.current && latestPillsVisible.current) {
       if (reveal.current === null) {
         reveal.current = window.setTimeout(() => {
           reveal.current = null;
-          wakeControls.current(true);
+          wakeControls.current(true, false);
         }, 1500);
       }
       return;
@@ -279,9 +292,12 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const lockControls = () => {
     if (idle.current !== null) window.clearTimeout(idle.current);
     if (reveal.current !== null) window.clearTimeout(reveal.current);
+    if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
     idle.current = null;
     reveal.current = null;
+    cursorIdle.current = null;
     latestLocked.current = true;
+    setCursorHidden(true);
     setLocked(true);
     setHidden(true);
     setMenu(false);
@@ -299,15 +315,20 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     } else {
       if (idle.current !== null) window.clearTimeout(idle.current);
       if (reveal.current !== null) window.clearTimeout(reveal.current);
+      if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
       idle.current = null;
       reveal.current = null;
+      cursorIdle.current = null;
       setHidden(false);
+      setCursorHidden(false);
     }
     return () => {
       if (idle.current !== null) window.clearTimeout(idle.current);
       if (reveal.current !== null) window.clearTimeout(reveal.current);
+      if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
       idle.current = null;
       reveal.current = null;
+      cursorIdle.current = null;
     };
   }, [playing, wake]);
 
@@ -430,7 +451,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   return (
     <div
       ref={wrap}
-      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
+      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${cursorHidden ? " cursor-hidden" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
