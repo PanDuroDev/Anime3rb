@@ -586,10 +586,19 @@ input { font: inherit; }
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: 0;
   background: var(--black);
   cursor: pointer;
   user-select: none;
+}
+
+/* Keep the video edge-to-edge in both inline playback and browser fullscreen. */
+.player:fullscreen,
+.player:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
 }
 
 .player.theater {
@@ -605,6 +614,7 @@ input { font: inherit; }
   width: 100%;
   height: 100%;
   object-fit: contain;
+  border-radius: 0;
   background: var(--black);
   touch-action: none;
 }
@@ -1029,9 +1039,9 @@ input { font: inherit; }
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--text);
+  background: #f1f1f1;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
-  color: var(--bg);
+  color: #0f0f0f;
   opacity: 1;
   transform: translate(-50%, -50%) scale(.96);
   transition: opacity .18s ease, transform .18s ease;
@@ -1110,7 +1120,6 @@ input { font: inherit; }
   .watch-nav .ghost { padding: 7px 12px; font-size: 13px; }
   .watch-layout { grid-template-columns: 1fr; }
   .watch-side { position: static; max-height: 420px; }
-  .player { border-radius: 10px; }
   .controls { padding: 22px 8px 7px; }
   .row { flex-wrap: wrap; row-gap: 3px; }
   .btn { width: 34px; height: 34px; }
