@@ -415,6 +415,7 @@ const SOURCE_HOOK: &str = r#"(function () {
       method: "POST",
       mode: "cors",
       cache: "no-store",
+      targetAddressSpace: "loopback",
       body: text
     }).then(function () {
       captured = true;
