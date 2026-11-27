@@ -15,6 +15,7 @@ export type Anime = {
 export type Source = { label: string; res: string; premium: boolean; src: string };
 export type EpisodeData = { sources: Source[]; poster: string; thumbs: string; thumbnail_page: string };
 export type ThumbnailData = { poster: string; thumbs: string };
+export type EpisodeThumbnail = { url: string; image: string };
 export type Skips = { ranges: { start: number; end: number }[]; content_end: number };
 
 export const home = () => invoke<Home>("home");
@@ -23,6 +24,8 @@ export const browse = (page: number) => invoke<Card[]>("browse", { page });
 export const anime = (url: string) => invoke<Anime>("anime", { url });
 export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
 export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
+export const episodeThumbnails = (urls: string[]) =>
+  invoke<EpisodeThumbnail[]>("episode_thumbnails", { urls });
 export const skips = (title: string, episode: number, length: number) =>
   invoke<Skips>("skips", { title, episode, length });
 
