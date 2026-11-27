@@ -58,6 +58,22 @@ pub struct EpisodeData {
     pub sources: Vec<Source>,
     pub poster: String,
     pub thumbs: String,
+    pub thumbnail_page: String,
+}
+
+#[derive(Serialize)]
+pub struct ThumbnailData {
+    pub poster: String,
+    pub thumbs: String,
+}
+
+fn thumbnail_data(page: &str) -> ThumbnailData {
+    let poster = regex::Regex::new(r#"https://thumbnails\\.vid3rb\\.com/[^'\"\\\\]+/thumbnail\\.001\\.jpeg"#).unwrap();
+    let thumbs = regex::Regex::new(r#"https://thumbnails\\.vid3rb\\.com/[^'\"\\\\]+/thumbnails\\.vtt"#).unwrap();
+    ThumbnailData {
+        poster: poster.find(page).map(|m| m.as_str().to_string()).unwrap_or_default(),
+        thumbs: thumbs.find(page).map(|m| m.as_str().to_string()).unwrap_or_default(),
+    }
 }
 
 async fn get(url: &str) -> Result<String, String> {
@@ -172,6 +188,38 @@ pub async fn home() -> Result<Home, String> {
 
 /// Posters only load from a page whose referer is anime3rb itself, so the webview proxies them.
 /// Fetch the thumbnail WebVTT through Rust so the player is not blocked by CDN CORS rules.
+#[tauri::command]
+pub async fn thumbnail_info(url: String) -> Result<ThumbnailData, String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|error| error.to_string())?;
+    let host = parsed.host_str().unwrap_or_default();
+    if parsed.scheme() != "https" || !(host == "vid3rb.com" || host.ends_with(".vid3rb.com")) {
+        return Err("Unsupported player page URL".to_string());
+    }
+
+    let mut latest = ThumbnailData { poster: String::new(), thumbs: String::new() };
+    let mut last_error = String::from("Thumbnail metadata was not available");
+    for attempt in 0..3 {
+        match get(&url).await {
+            Ok(page) => {
+                latest = thumbnail_data(&page);
+                if !latest.thumbs.is_empty() {
+                    return Ok(latest);
+                }
+            }
+            Err(error) => last_error = error,
+        }
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_millis(250 * (attempt + 1))).await;
+        }
+    }
+
+    if !latest.poster.is_empty() || !latest.thumbs.is_empty() {
+        Ok(latest)
+    } else {
+        Err(last_error)
+    }
+}
+
 #[tauri::command]
 pub async fn thumbnail_vtt(url: String) -> Result<String, String> {
     let parsed = reqwest::Url::parse(&url).map_err(|error| error.to_string())?;
@@ -384,13 +432,13 @@ pub async fn episode(app: AppHandle, url: String) -> Result<EpisodeData, String>
         })
         .collect();
 
-    let poster = regex::Regex::new(r#"https://thumbnails\.vid3rb\.com/[^'"\\]+/thumbnail\.001\.jpeg"#).unwrap();
-    let thumbs = regex::Regex::new(r#"https://thumbnails\.vid3rb\.com/[^'"\\]+/thumbnails\.vtt"#).unwrap();
+    let thumbnails = thumbnail_data(&page);
 
     Ok(EpisodeData {
         sources,
-        poster: poster.find(&page).map(|m| m.as_str().to_string()).unwrap_or_default(),
-        thumbs: thumbs.find(&page).map(|m| m.as_str().to_string()).unwrap_or_default(),
+        poster: thumbnails.poster,
+        thumbs: thumbnails.thumbs,
+        thumbnail_page: player_url,
     })
 }
 
