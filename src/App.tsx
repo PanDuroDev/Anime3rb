@@ -494,6 +494,12 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
       });
   }, [data, url, visibleEpisodes, episodeImages]);
 
+  if (!data || data.url !== url) {
+    return error ? <ErrorState message={error} /> : <AnimeSkeleton />;
+  }
+
+  const first = data.episodes[0]?.number ?? 1;
+
   return (
     <div className="anime-page">
       <section className="anime-head">
