@@ -30,6 +30,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const reveal = useRef<number | null>(null);
   const latestHidden = useRef(false);
   const latestPillsVisible = useRef(false);
+  const wakeControls = useRef<(force?: boolean) => void>(() => {});
   const lastTouch = useRef<{ at: number; side: "left" | "right" } | null>(null);
   const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
   const pointerType = useRef("");
@@ -254,7 +255,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       if (reveal.current === null) {
         reveal.current = window.setTimeout(() => {
           reveal.current = null;
-          wake(true);
+          wakeControls.current(true);
         }, 1500);
       }
       return;
@@ -273,6 +274,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       }, 2500);
     }
   }, []);
+  wakeControls.current = wake;
 
   const lockControls = () => {
     if (idle.current !== null) window.clearTimeout(idle.current);
