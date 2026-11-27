@@ -382,7 +382,18 @@ input { font: inherit; }
 .skeleton-poster { display: block; aspect-ratio: 2 / 3; border-radius: var(--radius-md); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
 .skeleton-line { display: block; width: 76%; height: 9px; border-radius: var(--radius-pill); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
 .skeleton-heading { display: block; width: 132px; height: 17px; border-radius: var(--radius-xs); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
-@keyframes placeholder-pulse { to { opacity: .45; } }
+ { to { opacity: .45; } }.skeleton-heading.wide { width: min(280px, 70%); height: 26px; }
+.skeleton-detail-poster { display: block; width: 100%; max-width: 180px; aspect-ratio: 2 / 3; border-radius: var(--radius-md); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.skeleton-meta { display: block; width: min(220px, 70%); height: 14px; border-radius: var(--radius-pill); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.skeleton-copy { display: block; width: min(520px, 95%); height: 54px; border-radius: var(--radius-sm); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.skeleton-action { display: block; width: 150px; height: 42px; border-radius: var(--radius-pill); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.episode-skeleton { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 96px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); }
+.episode-skeleton i { display: block; flex: 0 0 54px; width: 54px; height: 81px; border-radius: var(--radius-sm); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.episode-skeleton span { display: block; width: min(120px, 55%); height: 12px; border-radius: var(--radius-pill); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.watch-player-skeleton { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--radius-md); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
+.watch-back-skeleton { width: 160px; height: 18px; }
+.state-error { border-style: solid; border-color: var(--line); }
+@keyframes placeholder-pulse
 
 /* ---------- Anime page ---------- */
 
@@ -1030,6 +1041,8 @@ input { font: inherit; }
 }
 
 @media (max-width: 760px) {
+  .skeleton-detail-poster { max-width: 110px; }
+  .watch-player-skeleton { border-radius: 10px; }
   .app { padding-inline: 14px; }
   .topbar {
     grid-template-columns: 1fr auto;
@@ -1094,7 +1107,7 @@ input { font: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .image-placeholder, .skeleton-poster, .skeleton-line, .skeleton-heading { animation: none; }
+  .image-placeholder, .skeleton-poster, .skeleton-line, .skeleton-heading, .skeleton-detail-poster, .skeleton-meta, .skeleton-copy, .skeleton-action, .episode-skeleton i, .episode-skeleton span, .watch-player-skeleton { animation: none; }
   .player .controls,
   .player .seek,
   .player .row,
