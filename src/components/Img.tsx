@@ -9,7 +9,10 @@ export function useImage(src?: string) {
   const [url, setUrl] = useState(() => (src ? cache.get(src) : undefined));
 
   useEffect(() => {
-    if (!src) return;
+    if (!src) {
+      setUrl(undefined);
+      return;
+    }
     const hit = cache.get(src);
     if (hit) {
       setUrl(hit);
