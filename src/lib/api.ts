@@ -13,7 +13,8 @@ export type Anime = {
   episodes: Episode[];
 };
 export type Source = { label: string; res: string; premium: boolean; src: string };
-export type EpisodeData = { sources: Source[]; poster: string; thumbs: string };
+export type EpisodeData = { sources: Source[]; poster: string; thumbs: string; thumbnailPage: string };
+export type ThumbnailData = { poster: string; thumbs: string };
 export type Skips = { ranges: { start: number; end: number }[]; content_end: number };
 
 export const home = () => invoke<Home>("home");
@@ -21,6 +22,7 @@ export const search = (query: string) => invoke<Card[]>("search", { query });
 export const browse = (page: number) => invoke<Card[]>("browse", { page });
 export const anime = (url: string) => invoke<Anime>("anime", { url });
 export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
+export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
 export const skips = (title: string, episode: number, length: number) =>
   invoke<Skips>("skips", { title, episode, length });
 
@@ -58,12 +60,43 @@ export function parseCueVtt(text: string, sourceUrl: string): Cue[] {
   return cues.sort((a, b) => a.start - b.start);
 }
 
+const cueCache = new Map<string, Cue[]>();
+const cueRequests = new Map<string, Promise<Cue[]>>();
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
 export async function loadCues(url: string): Promise<Cue[]> {
   if (!url) return [];
-  try {
-    const text = await invoke<string>("thumbnail_vtt", { url });
-    return parseCueVtt(text, url);
-  } catch { return []; }
+  const cached = cueCache.get(url);
+  if (cached) return cached;
+  const pending = cueRequests.get(url);
+  if (pending) return pending;
+
+  const request = (async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const text = await invoke<string>("thumbnail_vtt", { url });
+        const cues = parseCueVtt(text, url);
+        if (cues.length) {
+          // Keep only a small number of episode sheets in memory.
+          if (cueCache.size >= 30) {
+            const oldest = cueCache.keys().next().value;
+            if (oldest) cueCache.delete(oldest);
+          }
+          cueCache.set(url, cues);
+          return cues;
+        }
+      } catch {
+        // The CDN can briefly fail; retry below instead of permanently disabling previews.
+      }
+      if (attempt < 2) await wait(attempt === 0 ? 250 : 700);
+    }
+    return [];
+  })().finally(() => {
+    cueRequests.delete(url);
+  });
+
+  cueRequests.set(url, request);
+  return request;
 }
 
 const toSeconds = (stamp: string) => {
