@@ -864,14 +864,17 @@ input { font: inherit; }
 .row { display: flex; align-items: center; gap: 2px; min-width: 0; }
 
 .btn {
+  appearance: none;
   display: grid;
+  flex: 0 0 36px;
   place-items: center;
-  flex: 0 0 auto;
   width: 36px;
   height: 36px;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 50%;
-  background: none;
+  background: transparent;
   color: var(--text);
   transition: background .15s ease;
 }
