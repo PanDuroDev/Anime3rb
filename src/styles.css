@@ -197,7 +197,7 @@ input { font: inherit; }
   text-align: center;
 }
 .empty-state h2 { margin: 0; color: var(--text); font-size: 17px; }
-.empty-state p { margin: 0; font-size: 13px; }
+.empty-state p { margin: 0; max-width: 80ch; font-size: 13px; overflow-wrap: anywhere; }
 .empty-state.compact { min-height: 120px; margin-top: 16px; }
 .empty-state-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--panel); color: var(--accent-soft-text); }
 
@@ -385,7 +385,8 @@ input { font: inherit; }
 .skeleton-poster { display: block; aspect-ratio: 2 / 3; border-radius: var(--radius-md); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
 .skeleton-line { display: block; width: 76%; height: 9px; border-radius: var(--radius-pill); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
 .skeleton-heading { display: block; width: 132px; height: 17px; border-radius: var(--radius-xs); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
- { to { opacity: .45; } }.skeleton-heading.wide { width: min(280px, 70%); height: 26px; }
+@keyframes placeholder-pulse { to { opacity: .45; } }
+.skeleton-heading.wide { width: min(280px, 70%); height: 26px; }
 .skeleton-detail-poster { display: block; width: 100%; max-width: 180px; aspect-ratio: 2 / 3; border-radius: var(--radius-md); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
 .skeleton-meta { display: block; width: min(220px, 70%); height: 14px; border-radius: var(--radius-pill); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
 .skeleton-copy { display: block; width: min(520px, 95%); height: 54px; border-radius: var(--radius-sm); background: var(--soft); animation: placeholder-pulse 1.35s ease-in-out infinite alternate; }
