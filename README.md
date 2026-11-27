@@ -48,7 +48,7 @@ npm run tauri android dev
 
 ## Prebuilt downloads
 
-Version **1.3.0** is built through GitHub Actions when its version metadata reaches `main`, when a
+Version **0.1.3** is built through GitHub Actions when its version metadata reaches `main`, when a
 `v*` tag is pushed, or when you manually run **Actions → Build Anime3rb → Run workflow**.
 
 Each successful run uploads two downloadable artifacts to its run page:
