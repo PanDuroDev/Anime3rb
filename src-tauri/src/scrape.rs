@@ -198,7 +198,7 @@ pub async fn thumbnail_info(url: String) -> Result<ThumbnailData, String> {
 
     let mut latest = ThumbnailData { poster: String::new(), thumbs: String::new() };
     let mut last_error = String::from("Thumbnail metadata was not available");
-    for attempt in 0..3 {
+    for _ in 0..3 {
         match get(&url).await {
             Ok(page) => {
                 latest = thumbnail_data(&page);
@@ -207,9 +207,6 @@ pub async fn thumbnail_info(url: String) -> Result<ThumbnailData, String> {
                 }
             }
             Err(error) => last_error = error,
-        }
-        if attempt < 2 {
-            tokio::time::sleep(Duration::from_millis(250 * (attempt + 1))).await;
         }
     }
 
