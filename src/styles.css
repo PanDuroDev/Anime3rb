@@ -4,25 +4,25 @@
   /* HackerTube / Anime3rb-Skin palette */
   --bg: #0f0f0f;
   --bg-deep: #111111;
-  --surface: var(--surface);
-  --surface-raised: var(--surface-raised);
+  --surface: #131313;
+  --surface-raised: #191919;
   --panel: #1a1a1a;
   --soft: #272727;
   --line: #2c2c2c;
-  --line-strong: var(--line-strong);
+  --line-strong: #3b3b3b;
   --text: #f1f1f1;
   --muted: #a3a3a3;
   --accent: #2563eb;
-  --accent-hover: var(--accent-hover);
-  --accent-tint: var(--accent-tint);
-  --accent-tint-strong: var(--accent-tint-strong);
-  --accent-soft-text: var(--accent-soft-text);
-  --accent-text: var(--accent-text);
-  --accent-contrast: var(--accent-contrast);
-  --accent-surface: var(--accent-surface);
+  --accent-hover: #1d4ed8;
+  --accent-tint: rgba(37, 99, 235, .16);
+  --accent-tint-strong: rgba(37, 99, 235, .28);
+  --accent-soft-text: #8ab4ff;
+  --accent-text: #cfd9f0;
+  --accent-contrast: #dbeafe;
+  --accent-surface: #182338;
   --focus-ring: rgba(37, 99, 235, .72);
-  --scrollbar-thumb: var(--scrollbar-thumb);
-  --scrollbar-thumb-hover: var(--scrollbar-thumb-hover)666;
+  --scrollbar-thumb: #454545;
+  --scrollbar-thumb-hover: #666666;
 
   /* Shared shape, spacing and elevation scale */
   --radius-xs: 6px;
@@ -464,6 +464,7 @@ input { font: inherit; }
 .ep-card.is-current { border-color: var(--accent); background: var(--accent-surface); }
 
 .ep-thumb {
+  position: relative;
   display: block;
   flex: 0 0 54px;
   width: 54px;
