@@ -392,6 +392,7 @@ static WINDOW_ID: AtomicU64 = AtomicU64::new(0);
 const SOURCE_HOOK: &str = r#"(function () {
   var captured = false;
   var sending = false;
+  var sourceFound = false;
   var pendingBody = null;
   var visible = __VISIBLE__;
 
@@ -433,7 +434,8 @@ const SOURCE_HOOK: &str = r#"(function () {
   }
 
   function sendResponse(status, body) {
-    if (status < 200 || status >= 300 || !body) return;
+    if (sourceFound || status < 200 || status >= 300 || !body) return;
+    sourceFound = true;
     pendingBody = body;
     loopbackPermission().then(function (permission) {
       if (permission === "granted") {
@@ -617,7 +619,7 @@ fn read_callback_request(stream: &mut std::net::TcpStream) -> Option<(String, St
 
 fn callback_response(stream: &mut std::net::TcpStream, method: &str) {
     const CORS: &str =
-        "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: content-type\r\nAccess-Control-Allow-Private-Network: true\r\nCache-Control: no-store\r\n";
+        "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, OPTIONS\r\nAccess-Control-Allow-Headers: content-type\r\nCache-Control: no-store\r\n";
     let response = match method {
         "OPTIONS" => format!(
             "HTTP/1.1 204 No Content\r\n{CORS}Content-Length: 0\r\nConnection: close\r\n\r\n"
