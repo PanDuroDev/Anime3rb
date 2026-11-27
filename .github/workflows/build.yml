@@ -1,6 +1,6 @@
 name: Build Anime3rb
 
-run-name: "Anime3rb v1.3.0 | ${{ github.event_name == 'workflow_dispatch' && 'Manual build' || github.ref_name }}"
+run-name: "Anime3rb build | ${{ github.ref_name }}"
 
 on:
   push:
@@ -25,10 +25,17 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows (v1.3.0)
+    name: Windows installer
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read app version
+        id: app-version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - uses: actions/setup-node@v4
         with:
@@ -47,7 +54,7 @@ jobs:
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
-          name: Anime3rb-v1.3.0-Windows
+          name: Anime3rb-v${{ steps.app-version.outputs.version }}-Windows
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
@@ -55,10 +62,16 @@ jobs:
           retention-days: 30
 
   android:
-    name: Android (v1.3.0)
+    name: Android APKs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read app version
+        id: app-version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         with:
@@ -89,7 +102,7 @@ jobs:
       - name: Upload Android APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Anime3rb-v1.3.0-Android
+          name: Anime3rb-v${{ steps.app-version.outputs.version }}-Android
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
