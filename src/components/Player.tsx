@@ -297,7 +297,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     reveal.current = null;
     cursorIdle.current = null;
     latestLocked.current = true;
-    setCursorHidden(true);
+    setCursorHidden(false);
     setLocked(true);
     setHidden(true);
     setMenu(false);
