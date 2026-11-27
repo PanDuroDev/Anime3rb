@@ -27,8 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: anime3rb-build-${{ github.ref }}
-  cancel-in-progress: false
+  group: anime3rb-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
