@@ -396,26 +396,12 @@ const SOURCE_HOOK: &str = r#"(function () {
   var pendingBody = null;
   var visible = __VISIBLE__;
 
-  function loopbackPermission() {
-    if (!navigator.permissions || !navigator.permissions.query) {
-      return Promise.resolve("prompt");
-    }
-    return navigator.permissions.query({ name: "loopback-network" }).then(function (status) {
-      return status.state;
-    }).catch(function () {
-      // Older WebViews do not recognize this permission name. Use an explicit button.
-      return "prompt";
-    });
-  }
-
   function send(text) {
     if (captured || sending || !text) return;
     sending = true;
     fetch("http://127.0.0.1:__PORT__/capture", {
       method: "POST",
-      mode: "cors",
       cache: "no-store",
-      targetAddressSpace: "loopback",
       body: text
     }).then(function () {
       captured = true;
@@ -423,10 +409,7 @@ const SOURCE_HOOK: &str = r#"(function () {
       pendingBody = null;
     }).catch(function () {
       sending = false;
-      if (visible) {
-        var label = document.getElementById("a3-checking-label");
-        if (label) label.textContent = "تعذر الاتصال المحلي. راجع إذن الشبكة المحلية ثم حاول مجدداً.";
-      }
+      if (visible) showStatus("prompt");
     });
   }
 
@@ -438,15 +421,9 @@ const SOURCE_HOOK: &str = r#"(function () {
     if (sourceFound || status < 200 || status >= 300 || !body) return;
     sourceFound = true;
     pendingBody = body;
-    loopbackPermission().then(function (permission) {
-      if (permission === "granted") {
-        send(body);
-      } else if (visible) {
-        showStatus(permission);
-      }
-      // When a hidden WebView has no permission, let its short timeout lead to the
-      // visible retry rather than triggering a permission request without a gesture.
-    });
+    // WebView2 answers "prompt" for the loopback permission, so send right away and let
+    // the visible retry button appear only if the request itself fails.
+    send(body);
   }
 
   function showStatus(permission) {
@@ -541,8 +518,21 @@ const SOURCE_HOOK: &str = r#"(function () {
     };
   }
 
-  // Android WebView may install remote-page initialization scripts after page scripts
-  // have started. Poll the page's source array as a fallback if the XHR already finished.
+  // The player writes its source array into a script inside player.ready(), so read it from
+  // the rendered HTML; that works even when the request never passes through XHR/fetch.
+  var checkInlineSources = function () {
+    try {
+      var html = document.documentElement.innerHTML;
+      var at = html.indexOf("video_sources = [{");
+      if (at < 0) return;
+      var rest = html.slice(at + "video_sources = ".length);
+      var end = rest.indexOf("];");
+      if (end > -1) sendResponse(200, rest.slice(0, end + 1));
+    } catch (e) {}
+  };
+  checkInlineSources();
+  setInterval(checkInlineSources, 400);
+
   var checkExistingSources = function () {
     try {
       if (typeof video_sources !== "undefined" &&
@@ -553,7 +543,6 @@ const SOURCE_HOOK: &str = r#"(function () {
     } catch (e) {}
   };
   checkExistingSources();
-  setInterval(checkExistingSources, 300);
 
   // Prevent a player preview from producing audio in either capture window.
   document.addEventListener("play", function (event) {
