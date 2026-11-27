@@ -61,9 +61,8 @@ export function parseCueVtt(text: string, sourceUrl: string): Cue[] {
 export async function loadCues(url: string): Promise<Cue[]> {
   if (!url) return [];
   try {
-    const response = await fetch(url, { cache: "force-cache" });
-    if (!response.ok) return [];
-    return parseCueVtt(await response.text(), url);
+    const text = await invoke<string>("thumbnail_vtt", { url });
+    return parseCueVtt(text, url);
   } catch { return []; }
 }
 

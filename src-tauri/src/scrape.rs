@@ -171,6 +171,16 @@ pub async fn home() -> Result<Home, String> {
 }
 
 /// Posters only load from a page whose referer is anime3rb itself, so the webview proxies them.
+/// Fetch the thumbnail WebVTT through Rust so the player is not blocked by CDN CORS rules.
+#[tauri::command]
+pub async fn thumbnail_vtt(url: String) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|error| error.to_string())?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("thumbnails.vid3rb.com") {
+        return Err("Unsupported thumbnail URL".to_string());
+    }
+    get(&url).await
+}
+
 #[tauri::command]
 pub async fn image(url: String) -> Result<String, String> {
     if !url.starts_with("https://images.anime3rb.com/") {
