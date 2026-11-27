@@ -20,7 +20,34 @@ export type Skips = { ranges: { start: number; end: number }[]; content_end: num
 export const home = () => invoke<Home>("home");
 export const search = (query: string) => invoke<Card[]>("search", { query });
 export const browse = (page: number) => invoke<Card[]>("browse", { page });
-export const anime = (url: string) => invoke<Anime>("anime", { url });
+const animeCache = new Map<string, { data: Anime; expiresAt: number }>();
+const animeRequests = new Map<string, Promise<Anime>>();
+const ANIME_CACHE_TTL = 15 * 60 * 1000;
+
+export function anime(url: string): Promise<Anime> {
+  const cached = animeCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.data);
+  }
+  if (cached) animeCache.delete(url);
+
+  const pending = animeRequests.get(url);
+  if (pending) return pending;
+
+  const request = invoke<Anime>("anime", { url })
+    .then((data) => {
+      if (animeCache.size >= 40) {
+        const oldest = animeCache.keys().next().value;
+        if (oldest) animeCache.delete(oldest);
+      }
+      animeCache.set(url, { data, expiresAt: Date.now() + ANIME_CACHE_TTL });
+      return data;
+    })
+    .finally(() => animeRequests.delete(url));
+
+  animeRequests.set(url, request);
+  return request;
+}
 export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
 export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
 const episodeArtworkCache = new Map<string, string>();
