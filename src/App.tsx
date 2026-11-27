@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Player, { Icon } from "./components/Player";
+import Player from "./components/Player";
+import { Icon } from "./components/Icon";
 import { Img } from "./components/Img";
 import {
   Anime,
@@ -53,7 +54,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <button className="brand" type="button" onClick={() => go({ kind: "home" })}>
-          <span className="brand-dot">▶</span> Anime<b>3rb</b>
+          <span className="brand-dot"><Icon name="play" size={15} /></span> Anime<b>3rb</b>
         </button>
         <form className="searchbox" onSubmit={submit}>
           <input
@@ -69,6 +70,7 @@ export default function App() {
         <nav className="topnav">
           <button
             className={`nav-link${view.kind === "home" ? " is-active" : ""}`}
+            aria-current={view.kind === "home" ? "page" : undefined}
             type="button"
             onClick={() => go({ kind: "home" })}
           >
@@ -76,6 +78,7 @@ export default function App() {
           </button>
           <button
             className={`nav-link${view.kind === "browse" ? " is-active" : ""}`}
+            aria-current={view.kind === "browse" ? "page" : undefined}
             type="button"
             onClick={() => go({ kind: "browse", page: 1 })}
           >
@@ -104,6 +107,36 @@ export default function App() {
           />
         )}
       </main>
+    </div>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="card-skeleton" aria-hidden="true">
+      <span className="skeleton-poster" />
+      <span className="skeleton-line" />
+    </div>
+  );
+}
+
+function CardSkeletonGrid({ count }: { count: number }) {
+  return (
+    <div className="grid skeleton-grid" aria-hidden="true">
+      {Array.from({ length: count }, (_, index) => <SkeletonCard key={index} />)}
+    </div>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="home-skeleton" aria-label="Loading home page">
+      {[0, 1, 2].map((row) => (
+        <section className="rail" key={row} aria-hidden="true">
+          <div className="section-head"><span className="skeleton-heading" /></div>
+          <div className="skeleton-row">{Array.from({ length: 7 }, (_, index) => <SkeletonCard key={index} />)}</div>
+        </section>
+      ))}
     </div>
   );
 }
@@ -248,7 +281,7 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
   }, []);
 
   if (error) return <p className="notice">{error}</p>;
-  if (!data) return <p className="notice">Loading…</p>;
+  if (!data) return <HomeSkeleton />;
 
   return (
     <>
@@ -279,8 +312,8 @@ function SearchView({ query, open }: { query: string; open: (url: string) => voi
   }, [query]);
 
   if (error) return <p className="notice">{error}</p>;
-  if (!items) return <p className="notice">Searching…</p>;
-  if (!items.length) return <p className="notice">No results for “{query}”</p>;
+  if (!items) return <section className="results"><div className="section-head"><h2>Results for “{query}”</h2></div><CardSkeletonGrid count={10} /></section>;
+  if (!items.length) return <div className="empty-state"><span className="empty-state-mark"><Icon name="refresh" size={22} /></span><h2>No results found</h2><p>Try another title or check the spelling.</p></div>;
 
   return (
     <section className="results">
@@ -321,11 +354,11 @@ function BrowseView({
         <span className="count">Page {page}</span>
       </div>
       {!items ? (
-        <p className="notice">Loading…</p>
+        <CardSkeletonGrid count={12} />
       ) : items.length ? (
         <CardGrid items={items} open={open} />
       ) : (
-        <p className="notice">No more titles.</p>
+        <div className="empty-state compact"><h2>No more titles</h2><p>There are no additional results on this page.</p></div>
       )}
       <div className="pager">
         <button className="ghost" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
