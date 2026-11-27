@@ -453,10 +453,41 @@ input { font: inherit; }
 
 .episodes { margin-top: 34px; }
 
+.episodes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 30px 0 12px;
+}
+
+.episodes-toolbar .section-head { margin: 0; }
+
+.episode-search {
+  display: flex;
+  flex: 0 1 340px;
+  min-width: min(100%, 220px);
+}
+
+.episode-search input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.episode-search input::placeholder { color: var(--muted); }
+.episode-search input:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+
 .ep-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
 }
 
 .ep-card {
@@ -474,7 +505,7 @@ input { font: inherit; }
 
 .ep-card:hover { border-color: var(--accent); }
 
-.ep-card.is-current { border-color: var(--accent); background: var(--accent-surface); }
+.ep-card.is-current:not(.is-grid) { border-color: var(--accent); background: var(--accent-surface); }
 
 .ep-thumb {
   position: relative;
@@ -504,7 +535,124 @@ input { font: inherit; }
   -webkit-box-orient: vertical;
 }
 
-.ep-card.is-current .ep-name { color: var(--accent-text); }
+.ep-card.is-current:not(.is-grid) .ep-name { color: var(--accent-text); }
+
+/* Full-cover episode tiles on the anime details page. */
+.ep-card.is-grid {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  min-width: 0;
+  min-height: 132px;
+  aspect-ratio: 16 / 9;
+  padding: 14px;
+  overflow: hidden;
+  border-color: var(--line);
+  background: var(--panel);
+  isolation: isolate;
+}
+
+.ep-card.is-grid .ep-thumb {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  flex: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.ep-card.is-grid .ep-text {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  color: var(--white);
+  opacity: 0;
+  transform: translateY(8px);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.ep-card.is-grid .ep-num { font-size: 14px; font-weight: 700; }
+
+.ep-card.is-grid .ep-name {
+  color: rgba(255, 255, 255, .9);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+}
+
+.ep-card.is-grid .ep-done {
+  background: rgba(255, 255, 255, .18);
+  color: var(--white);
+}
+
+.ep-card.is-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, .86) 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+
+.ep-card.is-grid .ep-thumb img { transition: transform .24s ease; }
+
+.ep-card.is-grid:hover,
+.ep-card.is-grid:focus-visible,
+.ep-card.is-grid.is-current { border-color: var(--accent); }
+
+.ep-card.is-grid:hover::after,
+.ep-card.is-grid:focus-visible::after { opacity: 1; }
+
+.ep-card.is-grid:hover .ep-text,
+.ep-card.is-grid:focus-visible .ep-text { opacity: 1; transform: translateY(0); }
+
+.ep-card.is-grid:hover .ep-thumb img { transform: scale(1.04); }
+
+.ep-card.is-grid.is-current { box-shadow: 0 0 0 1px var(--accent); }
+
+.episode-grid-skeleton {
+  min-height: 132px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  background: var(--soft);
+  animation: placeholder-pulse 1.35s ease-in-out infinite alternate;
+}
+
+.episode-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 22px 0 8px;
+}
+
+.episode-pagination > span {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.episode-page-arrow {
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+}
+
+.episode-page-arrow svg { fill: currentColor; }
+.episode-page-arrow.is-previous svg { transform: rotate(180deg); }
+.episode-page-number { white-space: nowrap; }
 
 /* ---------- Watch page ---------- */
 
@@ -1113,6 +1261,8 @@ input { font: inherit; }
   .rail-arrow.end { right: 0; }
   .anime-head { grid-template-columns: 110px 1fr; gap: 14px; padding: 14px; }
   .anime-info h1 { font-size: 20px; }
+  .episodes-toolbar { align-items: stretch; flex-direction: column; }
+  .episode-search { flex-basis: auto; width: 100%; }
   .desc { -webkit-line-clamp: 3; }
   .watch-bar { flex-wrap: wrap; gap: 10px; }
   .watch-title { order: -1; flex-basis: 100%; }
@@ -1140,6 +1290,9 @@ input { font: inherit; }
 }
 
 @media (hover: none), (pointer: coarse) {
+  .ep-card.is-grid .ep-text { opacity: 1; transform: none; }
+  .ep-card.is-grid::after { opacity: 1; }
+
   .player .volume-wrap .volume {
     flex: 0 1 62px;
     width: 62px;
@@ -1154,6 +1307,9 @@ input { font: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .image-placeholder, .skeleton-poster, .skeleton-line, .skeleton-heading, .skeleton-detail-poster, .skeleton-meta, .skeleton-copy, .skeleton-action, .episode-skeleton i, .episode-skeleton span, .watch-player-skeleton { animation: none; }
+  .ep-card.is-grid::after,
+  .ep-card.is-grid .ep-text,
+  .ep-card.is-grid .ep-thumb img,
   .player .controls,
   .player .seek-wrap,
   .player .seek,
