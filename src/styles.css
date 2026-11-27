@@ -726,6 +726,18 @@ input { font: inherit; }
   .searchbox { grid-column: 1 / -1; max-width: none; order: 3; }
   .topnav { grid-column: 2; grid-row: 1; }
   .rail-card { flex-basis: 128px; }
+  /* Keep shelf controls reachable on touch screens without covering poster artwork. */
+  .rail-arrow {
+    top: -42px;
+    width: 30px;
+    height: 30px;
+    margin-top: 0;
+    background: var(--panel);
+    opacity: 1;
+  }
+  .rail-arrow:disabled { opacity: 0.28 !important; }
+  .rail-arrow.start { left: auto; right: 38px; }
+  .rail-arrow.end { right: 0; }
   .anime-head { grid-template-columns: 110px 1fr; gap: 14px; padding: 14px; }
   .anime-info h1 { font-size: 20px; }
   .desc { -webkit-line-clamp: 3; }

@@ -151,7 +151,18 @@ function Rail({
   };
 
   useEffect(() => {
+    const box = scroller.current;
+    if (!box) return;
+
     measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    observer?.observe(box);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [items]);
 
   const page = (direction: number) => {
@@ -214,7 +225,10 @@ function Rail({
 function HomeView({ open, resume }: { open: (url: string) => void; resume: (url: string, play: number) => void }) {
   const [data, setData] = useState<Home | null>(null);
   const [error, setError] = useState("");
-  const history = useMemo<Progress[]>(() => readProgress().filter((item) => item.time > 5), []);
+  const history = useMemo<Progress[]>(
+    () => readProgress().filter((item) => item.time > 5 && !(item.duration > 0 && item.time / item.duration >= 0.92)),
+    []
+  );
   const seen = useMemo(() => new Map(history.map((item) => [item.url, item])), [history]);
   const watching = useMemo<Card[]>(
     () =>
@@ -335,11 +349,12 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
       .catch((reason) => setError(String(reason)));
   }, [url]);
 
+  const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
+
   if (error) return <p className="notice">{error}</p>;
   if (!data) return <p className="notice">Loading…</p>;
 
   const first = data.episodes[0]?.number ?? 1;
-  const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
 
   return (
     <div className="anime-page">
