@@ -70,12 +70,12 @@ pub struct ThumbnailData {
 }
 
 #[derive(Clone)]
-struct KitsuCacheEntry {
+struct ArtworkCacheEntry {
     value: String,
     expires_at: Instant,
 }
 
-static ARTWORK_CACHE: OnceLock<Mutex<HashMap<String, KitsuCacheEntry>>> = OnceLock::new();
+static ARTWORK_CACHE: OnceLock<Mutex<HashMap<String, ArtworkCacheEntry>>> = OnceLock::new();
 static EPISODE_ARTWORK_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static KITSU_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static ANIZIP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -118,7 +118,7 @@ fn artwork_cache_put(key: String, value: String) {
         }
         cache.insert(
             key,
-            KitsuCacheEntry {
+            ArtworkCacheEntry {
                 value,
                 expires_at: now + ARTWORK_CACHE_TTL,
             },
@@ -1685,5 +1685,23 @@ mod external_artwork_tests {
         );
         assert!(!images.contains_key(&2));
         assert!(!images.contains_key(&3));
+    }
+
+    #[test]
+    fn validates_episode_still_urls_from_all_three_providers() {
+        assert!(super::valid_episode_artwork_url(
+            "https://media.kitsu.app/episodes/thumbnails/1/original.jpg"
+        ));
+        assert!(super::valid_episode_artwork_url(
+            "https://artworks.thetvdb.com/banners/v4/episode/1/screencap/still.jpg"
+        ));
+        assert!(super::valid_episode_artwork_url(
+            "https://image.tmdb.org/t/p/w500/still.jpg"
+        ));
+        assert!(super::valid_episode_artwork_url(
+            "https://cdn.nogitsu.com/images/unit/still/one-piece-1.jpg"
+        ));
+        assert!(!super::valid_episode_artwork_url("https://evil.example/still.jpg"));
+        assert!(!super::valid_episode_artwork_url("http://image.tmdb.org/still.jpg"));
     }
 }
