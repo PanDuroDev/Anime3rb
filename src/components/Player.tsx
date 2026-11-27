@@ -322,6 +322,15 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     return cues.find((cue) => hover.time >= cue.start && hover.time < cue.end) || cues[cues.length - 1];
   }, [hover, cues]);
 
+  const seekWidth = bar.current?.clientWidth ?? 0;
+  const hoverHalfWidth = Math.min((hoverCue?.w ?? 40) / 2, seekWidth / 2);
+  const hoverLeft = hover && seekWidth
+    ? Math.min(Math.max(hover.x, hoverHalfWidth), seekWidth - hoverHalfWidth)
+    : hover?.x ?? 0;
+  const nowLeft = seekWidth
+    ? Math.min(Math.max((duration ? time / duration : 0) * seekWidth, 20), seekWidth - 20)
+    : 0;
+
   const nextCue = useMemo(() => {
     if (!cues.length || !ready) return null;
     const at = Math.min(duration - 1, nextAt + 3);
@@ -454,8 +463,32 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           className="seek"
           dir="ltr"
           ref={bar}
+          role="slider"
+          tabIndex={0}
+          aria-label="Seek"
+          aria-valuemin={0}
+          aria-valuemax={duration || 0}
+          aria-valuenow={Math.min(time, duration || 0)}
+          aria-valuetext={`${formatTime(time)} of ${formatTime(duration)}`}
+          onKeyDown={(event) => {
+            if (!video.current) return;
+            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+              event.preventDefault();
+              seekBy(-5);
+            } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+              event.preventDefault();
+              seekBy(5);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              video.current.currentTime = 0;
+            } else if (event.key === "End") {
+              event.preventDefault();
+              video.current.currentTime = video.current.duration || 0;
+            }
+          }}
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
+            if (!rect.width) return;
             const ratio = Math.min(Math.max(0, (event.clientX - rect.left) / rect.width), 1);
             setHover({ x: ratio * rect.width, time: ratio * duration });
           }}
@@ -470,16 +503,21 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
             <b style={{ width: `${duration ? (buffered / duration) * 100 : 0}%` }} />
           </div>
           {hover && hoverCue && (
-            <div className="hover-frame" style={{ left: hover.x }} aria-hidden="true">
-              <div className="crop">
-                <i style={frameStyle(hoverCue, 172, 96)} />
+            <div className="hover-frame" style={{ left: hoverLeft }} aria-hidden="true">
+              <div className="crop" style={{ width: hoverCue.w, height: hoverCue.h }}>
+                <i style={frameStyle(hoverCue, hoverCue.w, hoverCue.h)} />
+                <span className="preview-time">{formatTime(hover.time)}</span>
               </div>
-              <span>{formatTime(hover.time)}</span>
             </div>
           )}
           {hover && !hoverCue && (
-            <div className="hover-time" style={{ left: hover.x }}>
+            <div className="hover-time" style={{ left: Math.min(Math.max(hover.x, 20), seekWidth - 20) }}>
               {formatTime(hover.time)}
+            </div>
+          )}
+          {hover && (
+            <div className="now-chip" style={{ left: nowLeft }} aria-hidden="true">
+              {formatTime(time)}
             </div>
           )}
         </div>
@@ -508,23 +546,26 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           >
             <Icon name={muted || volume === 0 ? "volume-mute" : "volume"} />
           </button>
-          <input
-            className="volume"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={muted ? 0 : volume}
-            aria-label="Volume"
-            title={`Volume ${Math.round(volume * 100)}%`}
-            onChange={(event) => {
-              const node = video.current;
-              if (!node) return;
-              node.volume = Number(event.currentTarget.value);
-              node.muted = node.volume === 0;
-              syncVolume();
-            }}
-          />
+          <div className="volume-wrap">
+            <input
+              className="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={muted ? 0 : volume}
+              style={{ "--volume-progress": `${(muted ? 0 : volume) * 100}%` } as React.CSSProperties}
+              aria-label="Volume"
+              title={`Volume ${Math.round(volume * 100)}%`}
+              onChange={(event) => {
+                const node = video.current;
+                if (!node) return;
+                node.volume = Number(event.currentTarget.value);
+                node.muted = node.volume === 0;
+                syncVolume();
+              }}
+            />
+          </div>
           <span className="time">
             {formatTime(time)} / {formatTime(duration)}
           </span>
