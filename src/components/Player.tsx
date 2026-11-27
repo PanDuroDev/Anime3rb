@@ -135,12 +135,19 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     };
     const onProgress = () => setBuffered(node.buffered.length ? node.buffered.end(node.buffered.length - 1) : 0);
     const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPause = () => {
+      setPlaying(false);
+      const total = node.duration || 0;
+      if (total > 0) {
+        save({ url, name: "", anime: "", image: "", time: node.currentTime, duration: total, at: Date.now() });
+      }
+    };
     const onWait = () => setBuffering(true);
     const onReady = () => setBuffering(false);
     const onEnd = () => {
       setPlaying(false);
-      save({ url, name: "", anime: "", image: "", time: 0, duration: node.duration || 0, at: Date.now() });
+      const total = node.duration || node.currentTime;
+      save({ url, name: "", anime: "", image: "", time: total, duration: total, at: Date.now() });
     };
     node.addEventListener("loadedmetadata", onMeta);
     node.addEventListener("timeupdate", onTime);

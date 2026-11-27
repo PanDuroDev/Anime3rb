@@ -166,13 +166,42 @@ input { font: inherit; }
 
 /* ---------- Cards ---------- */
 
+.rail-wrap { position: relative; }
+
 .rail-scroll {
   display: flex;
   gap: 14px;
   overflow-x: auto;
   padding-bottom: 8px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
 }
+
+.rail-scroll::-webkit-scrollbar { display: none; }
+
+.rail-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-top: -22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.9);
+  color: var(--text);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.rail-wrap:hover .rail-arrow { opacity: 1; }
+.rail-arrow:disabled { opacity: 0 !important; pointer-events: none; }
+.rail-arrow svg { fill: currentColor; }
+.rail-arrow.start { left: -12px; transform: rotate(180deg); }
+.rail-arrow.end { right: -12px; }
+.rail-arrow:hover { background: var(--accent); border-color: var(--accent); }
 
 .rail-card, .card {
   padding: 0;
@@ -181,7 +210,7 @@ input { font: inherit; }
   text-align: start;
 }
 
-.rail-card { flex: 0 0 156px; }
+.rail-card { flex: 0 0 152px; }
 
 .poster {
   position: relative;
@@ -197,14 +226,14 @@ input { font: inherit; }
 .rail-card:hover .poster, .card:hover .poster { outline: 2px solid var(--accent); }
 
 .card-name {
-  display: -webkit-box;
+  display: block;
   margin-top: 8px;
   overflow: hidden;
   color: var(--text);
   font-size: 13px;
-  line-height: 1.45;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .badge {
@@ -218,19 +247,37 @@ input { font: inherit; }
   font-weight: 600;
 }
 
-.resume {
+.pbar {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
-.ep-tag { margin-inline-start: 6px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.pbar i { display: block; height: 100%; background: var(--accent); }
+
+.ep-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.ep-bar i { display: block; height: 100%; background: var(--accent); }
+
+.ep-done {
+  margin-inline-start: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.16);
+  color: #8ab4ff;
+  font-size: 10px;
+  font-weight: 600;
+}
 
 .grid {
   display: grid;
@@ -679,6 +726,18 @@ input { font: inherit; }
   .searchbox { grid-column: 1 / -1; max-width: none; order: 3; }
   .topnav { grid-column: 2; grid-row: 1; }
   .rail-card { flex-basis: 128px; }
+  /* Keep shelf controls reachable on touch screens without covering poster artwork. */
+  .rail-arrow {
+    top: -42px;
+    width: 30px;
+    height: 30px;
+    margin-top: 0;
+    background: var(--panel);
+    opacity: 1;
+  }
+  .rail-arrow:disabled { opacity: 0.28 !important; }
+  .rail-arrow.start { left: auto; right: 38px; }
+  .rail-arrow.end { right: 0; }
   .anime-head { grid-template-columns: 110px 1fr; gap: 14px; padding: 14px; }
   .anime-info h1 { font-size: 20px; }
   .desc { -webkit-line-clamp: 3; }
