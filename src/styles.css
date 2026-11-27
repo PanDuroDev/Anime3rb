@@ -221,6 +221,7 @@ input { font: inherit; }
 .rail-arrow:hover { background: var(--accent); border-color: var(--accent); }
 
 .rail-card, .card {
+  min-width: 0;
   padding: 0;
   border: 0;
   background: none;
