@@ -6,8 +6,7 @@ import {
   Anime,
   Card,
   Episode,
-  episodeThumbnail,
-  episodeThumbnails,
+  episodeCatalogThumbnail,
   Home,
   Progress,
   anime as fetchAnime,
@@ -429,8 +428,6 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
   const [error, setError] = useState("");
   const [episodeQuery, setEpisodeQuery] = useState("");
   const [episodePage, setEpisodePage] = useState(1);
-  const [episodeImages, setEpisodeImages] = useState<Record<string, string>>({});
-  const requestedEpisodeImages = useRef(new Set<string>());
 
   useEffect(() => {
     let live = true;
@@ -438,8 +435,6 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
     setError("");
     setEpisodeQuery("");
     setEpisodePage(1);
-    setEpisodeImages({});
-    requestedEpisodeImages.current.clear();
     fetchAnime(url)
       .then((result) => live && setData(result))
       .catch((reason) => live && setError(String(reason)));
@@ -469,30 +464,6 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
   );
   const firstVisible = filteredEpisodes.length ? startIndex + 1 : 0;
   const lastVisible = Math.min(startIndex + EPISODES_PER_PAGE, filteredEpisodes.length);
-
-  useEffect(() => {
-    if (!data || data.url !== url) return;
-
-    const pending = visibleEpisodes.filter(
-      (item) => !episodeImages[item.url] && !requestedEpisodeImages.current.has(item.url)
-    );
-    if (!pending.length) return;
-
-    pending.forEach((item) => requestedEpisodeImages.current.add(item.url));
-    episodeThumbnails(pending.map((item) => item.url))
-      .then((results) => {
-        setEpisodeImages((current) => {
-          const next = { ...current };
-          for (const result of results) {
-            if (result.image) next[result.url] = result.image;
-          }
-          return next;
-        });
-      })
-      .catch(() => {
-        pending.forEach((item) => requestedEpisodeImages.current.delete(item.url));
-      });
-  }, [data, url, visibleEpisodes, episodeImages]);
 
   if (!data || data.url !== url) {
     return error ? <ErrorState message={error} /> : <AnimeSkeleton />;
@@ -549,7 +520,8 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
             {visibleEpisodes.map((item) => (
               <EpisodeCard
                 key={item.number}
-                image={episodeImages[item.url] ?? ""}
+                animeUrl={url}
+                animeName={data.name}
                 item={item}
                 current={false}
                 progress={seen.get(item.url)}
@@ -681,7 +653,8 @@ function WatchView({
             {data.episodes.map((item) => (
               <EpisodeCard
                 key={item.number}
-                image=""
+                animeUrl={url}
+                animeName={data.name}
                 item={item}
                 current={item.number === current.number}
                 progress={seen.get(item.url)}
@@ -697,89 +670,123 @@ function WatchView({
   );
 }
 
+type ArtworkObserverGroup = {
+  observer: IntersectionObserver;
+  callbacks: Map<Element, () => void>;
+};
+
+// Share one observer per scroll root instead of creating hundreds of observers in long lists.
+const artworkObservers = new Map<Element | null, ArtworkObserverGroup>();
+
+function observeArtwork(target: Element, root: Element | null, onVisible: () => void) {
+  if (typeof IntersectionObserver === "undefined") {
+    onVisible();
+    return () => {};
+  }
+
+  let group = artworkObservers.get(root);
+  if (!group) {
+    const callbacks = new Map<Element, () => void>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const callback = callbacks.get(entry.target);
+          if (!callback) continue;
+          callbacks.delete(entry.target);
+          observer.unobserve(entry.target);
+          callback();
+        }
+        if (!callbacks.size) {
+          observer.disconnect();
+          artworkObservers.delete(root);
+        }
+      },
+      { root, rootMargin: "180px 0px" }
+    );
+    group = { observer, callbacks };
+    artworkObservers.set(root, group);
+  }
+
+  group.callbacks.set(target, onVisible);
+  group.observer.observe(target);
+
+  return () => {
+    const current = artworkObservers.get(root);
+    if (!current) return;
+    current.callbacks.delete(target);
+    current.observer.unobserve(target);
+    if (!current.callbacks.size) {
+      current.observer.disconnect();
+      artworkObservers.delete(root);
+    }
+  };
+}
+
 function EpisodeArtwork({
-  src,
-  episodeUrl,
+  animeUrl,
+  animeName,
+  episodeNumber,
   root,
 }: {
-  src?: string;
-  episodeUrl?: string;
+  animeUrl: string;
+  animeName: string;
+  episodeNumber: number;
   root?: Element | null;
 }) {
   const target = useRef<HTMLSpanElement>(null);
-  const [loaded, setLoaded] = useState("");
+  const [image, setImage] = useState("");
   const [failed, setFailed] = useState(false);
-  const image = src || loaded;
 
   useEffect(() => {
-    setLoaded("");
+    setImage("");
     setFailed(false);
-  }, [src, episodeUrl]);
-
-  useEffect(() => {
-    if (src || !episodeUrl) return;
-    let live = true;
-    const load = () => {
-      episodeThumbnail(episodeUrl)
-        .then((result) => live && setLoaded(result))
-        .catch(() => {});
-    };
-
     const node = target.current;
-    if (!node || typeof IntersectionObserver === "undefined") {
-      load();
-      return () => {
-        live = false;
-      };
-    }
+    if (!node) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          load();
-        }
-      },
-      { root: root ?? null, rootMargin: "180px 0px" }
-    );
-    observer.observe(node);
+    let live = true;
+    const stopObserving = observeArtwork(node, root ?? null, () => {
+      episodeCatalogThumbnail(animeUrl, animeName, episodeNumber)
+        .then((result) => {
+          if (!live) return;
+          if (result) setImage(result);
+          else setFailed(true);
+        })
+        .catch(() => {
+          if (live) setFailed(true);
+        });
+    });
 
     return () => {
       live = false;
-      observer.disconnect();
+      stopObserving();
     };
-  }, [src, episodeUrl, root]);
+  }, [animeUrl, animeName, episodeNumber, root]);
 
   if (!image || failed) {
     return <span ref={target} className="image-placeholder" aria-hidden="true" />;
   }
 
-  return (
-    <img
-      src={image}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      onError={() => setFailed(true)}
-    />
-  );
+  return <img src={image} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
 }
 
 function EpisodeCard({
-  image,
+  animeUrl,
+  animeName,
   item,
   current,
   progress,
   onPlay,
-  layout = "list",
+  layout = "grid",
   thumbnailRoot,
 }: {
-  image: string;
+  animeUrl: string;
+  animeName: string;
   item: Episode;
   current: boolean;
   progress?: Progress;
   onPlay: (number: number) => void;
-  layout?: "grid" | "list" | "sidebar";
+  layout?: "grid" | "sidebar";
   thumbnailRoot?: Element | null;
 }) {
   const title = episodeTitle(item.name, item.number);
@@ -793,11 +800,12 @@ function EpisodeCard({
       title={layout === "list" ? item.name : undefined}
     >
       <span className="ep-thumb">
-        {layout === "grid"
-          ? <EpisodeArtwork src={image} />
-          : layout === "sidebar"
-            ? <EpisodeArtwork episodeUrl={item.url} root={thumbnailRoot} />
-            : <Img src={image} />}
+        <EpisodeArtwork
+          animeUrl={animeUrl}
+          animeName={animeName}
+          episodeNumber={item.number}
+          root={thumbnailRoot}
+        />
         {percent > 0 && (
           <span className="ep-bar">
             <i style={{ width: `${percent}%` }} />
