@@ -354,7 +354,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     if (event.pointerType !== "touch" || locked) return;
 
     const target = event.target as HTMLElement;
-    if (target.closest("button, input")) {
+    if (target.closest("button, input, .seek, .controls")) {
       touchGesture.current = null;
       return;
     }
@@ -383,6 +383,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       const delta = gesture.startY - event.clientY;
       if (Math.abs(delta) > 8) gesture.active = true;
       if (gesture.active && wrap.current) {
+        lastTouch.current = null;
         const node = video.current;
         if (node) {
           node.volume = Math.min(1, Math.max(0, gesture.startVolume + delta / wrap.current.clientHeight));
