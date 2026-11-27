@@ -629,7 +629,7 @@ input { font: inherit; }
   background: linear-gradient(to top, rgba(0, 0, 0, .38) 0, rgba(0, 0, 0, .22) 55%, rgba(0, 0, 0, .07) 80%, transparent);
   opacity: 1;
   transform: translateY(0);
-  transition: opacity .18s ease, transform .18s ease, padding .18s ease;
+  transition: opacity .18s ease, transform .18s ease;
 }
 
 .player.hide .controls {
@@ -682,6 +682,7 @@ input { font: inherit; }
 .unlock:hover { background: rgba(0,0,0,.9); }
 
 .pills { display: flex; justify-content: flex-end; gap: 6px; padding-bottom: 4px; }
+.pills:has(.pill:not([hidden])) { margin-bottom: -4px; }
 .pills .skip { margin-inline-end: auto; }
 
 .pill {
