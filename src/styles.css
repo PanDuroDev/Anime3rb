@@ -588,6 +588,7 @@ input { font: inherit; }
   overflow: hidden;
   border-radius: 14px;
   background: var(--black);
+  cursor: pointer;
   user-select: none;
 }
 
