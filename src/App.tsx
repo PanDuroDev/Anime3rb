@@ -110,6 +110,13 @@ export default function App() {
           />
         )}
       </main>
+      <footer className="source-credits">
+        Episode artwork: <a href="https://kitsu.io" target="_blank" rel="noreferrer">Kitsu</a>
+        {" · "}
+        <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
+        {" · "}
+        <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
+      </footer>
     </div>
   );
 }
