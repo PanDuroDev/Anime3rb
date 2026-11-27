@@ -48,17 +48,18 @@ npm run tauri android dev
 
 ## Prebuilt downloads
 
-GitHub Actions builds both platforms on every push to a `v*` tag and on manual runs
-(`Actions → build → Run workflow`). Download the artifacts from the run page, or the installers from
-the release page:
+Version **0.1.3** is built through GitHub Actions when its version metadata reaches `main`, when a
+`v*` tag is pushed, or when you manually run **Actions → Build Anime3rb → Run workflow**.
 
-- Windows: `.exe` (NSIS) and `.msi`
-- Android: per-ABI debug APKs, signed with the debug key and installable for testing
-  (`app-arm64-debug.apk` covers most phones)
+Each successful run uploads two downloadable artifacts to its run page:
 
-For a signed release APK, add a keystore to the Android project and configure it in
-`src-tauri/gen/android/app/build.gradle.kts`. The CI APKs are per-ABI debug builds, so pick the
-`arm64-v8a` one for a normal phone.
+- **Windows:** NSIS `.exe` installer and `.msi` installer.
+- **Android:** per-ABI debug APKs. The APKs are signed with the Android debug key; `arm64-v8a`
+  is the usual choice for modern phones.
+
+Artifacts are retained for **30 days**. This workflow uploads to Actions only and does not create a
+GitHub Release. To publish a signed Android release APK later, configure a release keystore in
+`src-tauri/gen/android/app/build.gradle.kts`.
 
 ## Notes
 
