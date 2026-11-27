@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0
+## 0.1.3
 
 - Introduces the first shared Anime3rb design foundation, including reusable design tokens and a shared icon component.
 - Adds skeleton loading layouts and consistent error and empty states across the main views.
