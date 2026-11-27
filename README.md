@@ -53,7 +53,8 @@ GitHub Actions builds both platforms on every push to a `v*` tag and on manual r
 the release page:
 
 - Windows: `.exe` (NSIS) and `.msi`
-- Android: universal debug APK (signed with the debug key, installable for testing)
+- Android: per-ABI debug APKs, signed with the debug key and installable for testing
+  (`app-arm64-debug.apk` covers most phones)
 
 For a signed release APK, add a keystore to the Android project and configure it in
 `src-tauri/gen/android/app/build.gradle.kts`. The CI APKs are per-ABI debug builds, so pick the
