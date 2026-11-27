@@ -91,7 +91,7 @@ const NOGITSU_PAGE_SIZE: u32 = 24;
 const NOGITSU_MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(650);
 
 fn artwork_cache_get(key: &str) -> Option<String> {
-    let mut cache = KITSU_CACHE
+    let mut cache = ARTWORK_CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .ok()?;
@@ -107,7 +107,7 @@ fn artwork_cache_get(key: &str) -> Option<String> {
 }
 
 fn artwork_cache_put(key: String, value: String) {
-    if let Ok(mut cache) = KITSU_CACHE
+    if let Ok(mut cache) = ARTWORK_CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
     {
@@ -120,7 +120,7 @@ fn artwork_cache_put(key: String, value: String) {
             key,
             KitsuCacheEntry {
                 value,
-                expires_at: now + KITSU_CACHE_TTL,
+                expires_at: now + ARTWORK_CACHE_TTL,
             },
         );
     }
@@ -262,7 +262,7 @@ async fn resolve_kitsu_anime_id(anime_url: &str, anime_name: &str) -> Result<Str
     let wanted_name = normalize_kitsu_title(anime_name);
     let wanted_slug = normalize_kitsu_title(&slug);
     let cache_key = format!("anime-id:{slug}:{wanted_name}");
-    if let Some(cached) = kitsu_cache_get(&cache_key) {
+    if let Some(cached) = artwork_cache_get(&cache_key) {
         return if cached == "!" {
             Err("No exact Kitsu match was found for this anime".to_string())
         } else {
@@ -295,11 +295,11 @@ async fn resolve_kitsu_anime_id(anime_url: &str, anime_name: &str) -> Result<Str
 
     match best {
         Some(id) => {
-            kitsu_cache_put(cache_key, id.clone());
+            artwork_cache_put(cache_key, id.clone());
             Ok(id)
         }
         None => {
-            kitsu_cache_put(cache_key, "!".to_string());
+            artwork_cache_put(cache_key, "!".to_string());
             Err("No exact Kitsu match was found for this anime".to_string())
         }
     }
@@ -651,7 +651,7 @@ async fn kitsu_episode_page(
 ) -> Result<HashMap<u32, String>, String> {
     let offset = kitsu_episode_page_offset(episode_number);
     let cache_key = format!("episode-page:{anime_id}:{offset}");
-    if let Some(cached) = kitsu_cache_get(&cache_key) {
+    if let Some(cached) = artwork_cache_get(&cache_key) {
         if let Ok(images) = serde_json::from_str::<HashMap<u32, String>>(&cached) {
             return Ok(images);
         }
@@ -664,7 +664,7 @@ async fn kitsu_episode_page(
     let images = parse_kitsu_episode_images(&payload);
 
     if let Ok(serialized) = serde_json::to_string(&images) {
-        kitsu_cache_put(cache_key, serialized);
+        artwork_cache_put(cache_key, serialized);
     }
     Ok(images)
 }
