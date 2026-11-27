@@ -25,12 +25,16 @@ Every page on Anime3rb embeds its content as schema.org JSON-LD, so nothing is s
 | Catalogue pages | `CollectionPage.mainEntity` on `/titles/list?page=N` |
 | Search | Livewire `search` component on `/titles/list` |
 | Anime + episode list | `TVSeries` node with `episode[]` (15-minute in-memory cache) |
+| Home / search / catalogue | Anime3rb, cached for 5 minutes (home/search) or 15 minutes (catalogue pages) |
 | Episode still images | Kitsu → AniZip → Nogitsu; fetched only near the viewport and cached by 20/24-episode range |
+| Series/catalogue posters | Anime3rb image CDN, proxied only when a poster approaches the viewport |
 | Player + video sources | `video_url` on the episode page, then `video_sources` on the player page |
 | Skip times | AniSkip, after mapping the title to MAL through AniList |
 
-All requests run in Rust, so there is no CORS restriction. Streams play directly from the signed
-`video.vid3rb.com` URLs, and posters are proxied through Rust because the image CDN blocks foreign referers.
+Metadata and player-source requests run in Rust to avoid CORS restrictions. Episode stills are loaded
+directly from the external providers' image CDNs. Series/catalogue posters that still come from
+Anime3rb are proxied through Rust because its image CDN blocks foreign referers, but their proxy
+requests are lazy-loaded and deduplicated. Streams play directly from the signed `video.vid3rb.com` URLs.
 
 Episode artwork is deliberately independent from Anime3rb's image endpoints:
 
@@ -39,9 +43,11 @@ Episode artwork is deliberately independent from Anime3rb's image endpoints:
 3. [Nogitsu](https://nogitsu.com/developers) supplies a range of stills aggregated from providers such as TVDB and TMDB.
 
 The first provider with an exact episode-number match wins. No series-cover fallback is used.
-Metadata is cached in memory for 24 hours, requests are deduplicated and serialized, and Nogitsu
+Provider metadata is cached in memory for 24 hours, requests are deduplicated and serialized, and Nogitsu
 calls are paced below its published 120-requests-per-minute limit. Anime3rb remains responsible
-for its catalogue, episode URLs and playback; it is not queried for episode artwork.
+for its catalogue, episode URLs and playback; its episode pages and player pages are never fetched
+to obtain episode artwork. Catalogue calls are also cached in the client: home/search for 5 minutes
+and browse/anime details for 15 minutes.
 
 Nogitsu's public API is free for non-commercial use with attribution. Episode artwork rights remain
 with their respective source providers and are used only to identify the corresponding episode.
