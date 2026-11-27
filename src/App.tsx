@@ -111,6 +111,54 @@ export default function App() {
   );
 }
 
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="empty-state state-error" role="alert">
+      <h2>Unable to load this content</h2>
+      <p>{message}</p>
+    </div>
+  );
+}
+
+function AnimeSkeleton() {
+  return (
+    <div className="anime-page" role="status" aria-label="Loading anime details">
+      <section className="anime-head">
+        <span className="skeleton-detail-poster" />
+        <div className="anime-info">
+          <span className="skeleton-heading wide" />
+          <span className="skeleton-meta" />
+          <span className="skeleton-copy" />
+          <span className="skeleton-action" />
+        </div>
+      </section>
+      <section className="episodes">
+        <div className="section-head"><span className="skeleton-heading" /></div>
+        <div className="ep-grid">
+          {Array.from({ length: 8 }, (_, index) => <div className="episode-skeleton" key={index}><i /><span /></div>)}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WatchSkeleton() {
+  return (
+    <div className="watch-page" role="status" aria-label="Loading episode">
+      <div className="watch-bar"><span className="skeleton-line watch-back-skeleton" /><span className="skeleton-heading" /></div>
+      <div className="watch-layout">
+        <div className="watch-player-skeleton" />
+        <aside className="watch-side">
+          <div className="section-head"><span className="skeleton-heading" /></div>
+          <div className="side-list">
+            {Array.from({ length: 7 }, (_, index) => <div className="episode-skeleton" key={index}><i /><span /></div>)}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function SkeletonCard() {
   return (
     <div className="card-skeleton" aria-hidden="true">
@@ -280,7 +328,7 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
       .catch((reason) => setError(String(reason)));
   }, []);
 
-  if (error) return <p className="notice">{error}</p>;
+  if (error) return <ErrorState message={error} />;
   if (!data) return <HomeSkeleton />;
 
   return (
@@ -311,7 +359,7 @@ function SearchView({ query, open }: { query: string; open: (url: string) => voi
       .catch((reason) => setError(String(reason)));
   }, [query]);
 
-  if (error) return <p className="notice">{error}</p>;
+  if (error) return <ErrorState message={error} />;
   if (!items) return <section className="results"><div className="section-head"><h2>Results for “{query}”</h2></div><CardSkeletonGrid count={10} /></section>;
   if (!items.length) return <div className="empty-state"><span className="empty-state-mark"><Icon name="refresh" size={22} /></span><h2>No results found</h2><p>Try another title or check the spelling.</p></div>;
 
@@ -345,7 +393,7 @@ function BrowseView({
       .catch((reason) => setError(String(reason)));
   }, [page]);
 
-  if (error) return <p className="notice">{error}</p>;
+  if (error) return <ErrorState message={error} />;
 
   return (
     <section className="results">
@@ -384,8 +432,8 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
 
-  if (error) return <p className="notice">{error}</p>;
-  if (!data) return <p className="notice">Loading…</p>;
+  if (error) return <ErrorState message={error} />;
+  if (!data) return <AnimeSkeleton />;
 
   const first = data.episodes[0]?.number ?? 1;
 
@@ -465,8 +513,8 @@ function WatchView({
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
-  if (error) return <p className="notice">{error}</p>;
-  if (!data) return <p className="notice">Loading…</p>;
+  if (error) return <ErrorState message={error} />;
+  if (!data) return <WatchSkeleton />;
 
   const index = data.episodes.findIndex((item) => item.number === number);
   const current = data.episodes[index];
