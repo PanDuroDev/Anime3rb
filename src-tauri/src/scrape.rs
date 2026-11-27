@@ -388,10 +388,13 @@ static WINDOW_ID: AtomicU64 = AtomicU64::new(0);
 
 const SOURCE_HOOK: &str = r#"(function () {
   var captured = false;
+  var sending = false;
+  var pendingBody = null;
   var visible = __VISIBLE__;
 
   function send(text) {
-    if (captured || !text) return;
+    if (captured || sending || !text) return;
+    sending = true;
     fetch("http://127.0.0.1:__PORT__/capture", {
       method: "POST",
       mode: "cors",
@@ -399,9 +402,11 @@ const SOURCE_HOOK: &str = r#"(function () {
       body: text
     }).then(function () {
       captured = true;
+      sending = false;
+      pendingBody = null;
     }).catch(function () {
-      // A hidden WebView may not be allowed to reach loopback. The visible retry can
-      // show the browser's local-network permission prompt when the platform requires it.
+      sending = false;
+      // The visible retry exposes a user-gesture button for loopback permission prompts.
     });
   }
 
@@ -410,31 +415,70 @@ const SOURCE_HOOK: &str = r#"(function () {
   }
 
   function sendResponse(status, body) {
-    if (status >= 200 && status < 300 && body) send(body);
+    if (status < 200 || status >= 300 || !body) return;
+    pendingBody = body;
+    if (visible) {
+      showStatus(true);
+    } else {
+      // Try the quiet path first. If loopback access needs a gesture, the visible
+      // retry will ask the user to continue from its button.
+      send(body);
+    }
   }
 
-  function showStatus() {
-    if (!visible || !document.body || document.getElementById("a3-checking")) return;
-    var banner = document.createElement("div");
-    banner.id = "a3-checking";
-    banner.dir = "rtl";
-    banner.setAttribute("role", "status");
-    banner.setAttribute("aria-live", "polite");
-    banner.textContent = "جارٍ التحقق من مصدر الفيديو...";
-    banner.style.cssText =
-      "position:fixed;top:12px;left:12px;z-index:2147483647;" +
-      "padding:9px 14px;border:1px solid rgba(255,255,255,.18);" +
-      "border-radius:10px;background:rgba(15,15,15,.92);color:#fff;" +
-      "font:14px Segoe UI,Tahoma,sans-serif;box-shadow:0 4px 18px #0008;" +
-      "pointer-events:none";
-    document.body.appendChild(banner);
+  function showStatus(ready) {
+    if (!visible || !document.body) return;
+    var banner = document.getElementById("a3-checking");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "a3-checking";
+      banner.dir = "rtl";
+      banner.setAttribute("role", "status");
+      banner.setAttribute("aria-live", "polite");
+      banner.style.cssText =
+        "position:fixed;top:12px;left:12px;z-index:2147483647;" +
+        "display:flex;align-items:center;gap:10px;padding:9px 12px;" +
+        "border:1px solid rgba(255,255,255,.18);border-radius:10px;" +
+        "background:rgba(15,15,15,.94);color:#fff;" +
+        "font:14px Segoe UI,Tahoma,sans-serif;box-shadow:0 4px 18px #0008;" +
+        "pointer-events:auto";
+      var label = document.createElement("span");
+      label.id = "a3-checking-label";
+      label.textContent = "جارٍ التحقق من مصدر الفيديو...";
+      banner.appendChild(label);
+      var button = document.createElement("button");
+      button.id = "a3-checking-continue";
+      button.type = "button";
+      button.textContent = "متابعة";
+      button.disabled = true;
+      button.style.cssText =
+        "border:0;border-radius:7px;padding:6px 10px;" +
+        "background:#2563eb;color:#fff;font:inherit;cursor:pointer";
+      button.addEventListener("click", function () {
+        if (pendingBody) send(pendingBody);
+      });
+      banner.appendChild(button);
+      document.body.appendChild(banner);
+    }
+
+    if (ready || pendingBody) {
+      var status = document.getElementById("a3-checking-label");
+      var button = document.getElementById("a3-checking-continue");
+      if (status) status.textContent = "تم تجهيز مصادر الفيديو";
+      if (button) {
+        button.disabled = false;
+        button.textContent = "السماح والمتابعة";
+      }
+    }
   }
 
   if (visible) {
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", showStatus);
+      document.addEventListener("DOMContentLoaded", function () {
+        showStatus(Boolean(pendingBody));
+      });
     } else {
-      showStatus();
+      showStatus(Boolean(pendingBody));
     }
   }
 
@@ -469,6 +513,20 @@ const SOURCE_HOOK: &str = r#"(function () {
       });
     };
   }
+
+  // Android WebView may install remote-page initialization scripts after page scripts
+  // have started. Poll the page's source array as a fallback if the XHR already finished.
+  var checkExistingSources = function () {
+    try {
+      if (typeof video_sources !== "undefined" &&
+          Array.isArray(video_sources) &&
+          video_sources.length) {
+        sendResponse(200, JSON.stringify(video_sources));
+      }
+    } catch (e) {}
+  };
+  checkExistingSources();
+  setInterval(checkExistingSources, 300);
 
   // Prevent a player preview from producing audio in either capture window.
   document.addEventListener("play", function (event) {
@@ -650,14 +708,13 @@ async fn browser_sources_once(
 async fn browser_sources(app: &AppHandle, player_url: &str) -> Result<Vec<Value>, String> {
     match browser_sources_once(app, player_url, false, Duration::from_secs(12)).await {
         Ok(sources) => Ok(sources),
-        Err(error) if error.contains("Timed out") => {
+        Err(hidden_error) => {
             browser_sources_once(app, player_url, true, Duration::from_secs(60))
                 .await
-                .map_err(|fallback| {
-                    format!("Hidden capture timed out ({error}); visible verification failed: {fallback}")
+                .map_err(|visible_error| {
+                    format!("Hidden capture failed ({hidden_error}); visible verification failed: {visible_error}")
                 })
         }
-        Err(error) => Err(error),
     }
 }
 #[cfg(test)]
