@@ -68,8 +68,8 @@ pub struct ThumbnailData {
 }
 
 fn thumbnail_data(page: &str) -> ThumbnailData {
-    let poster = regex::Regex::new(r#"https://thumbnails\\.vid3rb\\.com/[^'\"\\\\]+/thumbnail\\.001\\.jpeg"#).unwrap();
-    let thumbs = regex::Regex::new(r#"https://thumbnails\\.vid3rb\\.com/[^'\"\\\\]+/thumbnails\\.vtt"#).unwrap();
+    let poster = regex::Regex::new(r#"https://thumbnails\.vid3rb\.com/[^'"\\]+/thumbnail\.001\.jpeg"#).unwrap();
+    let thumbs = regex::Regex::new(r#"https://thumbnails\.vid3rb\.com/[^'"\\]+/thumbnails\.vtt"#).unwrap();
     ThumbnailData {
         poster: poster.find(page).map(|m| m.as_str().to_string()).unwrap_or_default(),
         thumbs: thumbs.find(page).map(|m| m.as_str().to_string()).unwrap_or_default(),
