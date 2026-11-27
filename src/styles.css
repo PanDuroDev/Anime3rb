@@ -734,8 +734,8 @@ input { font: inherit; }
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.58));
 }
 
-.pill.next .thumb { opacity: 0; transition: opacity .15s ease; }
-.pill.next:hover .thumb { opacity: 1; }
+.pill.next .thumb { display: none; }
+.pill.next:hover .thumb { display: block; }
 .pill.next .thumb + svg, .pill.next .thumb ~ span { position: relative; z-index: 1; }
 .pill:hover > span:not(.thumb),
 .pill:hover > svg { color: var(--white); text-shadow: 0 1px 3px rgba(0, 0, 0, .85); }
@@ -1116,6 +1116,7 @@ input { font: inherit; }
   .btn { width: 34px; height: 34px; }
   .volume-wrap .volume { flex: 0 1 62px; width: 62px; min-width: 40px; margin-inline: 2px 4px; opacity: 1; pointer-events: auto; }
   .time { display: none; }
+  .panel { max-height: 45vh; }
   .unlock { top: 8px; inset-inline-end: 8px; min-height: 38px; }
 }
 
@@ -1139,7 +1140,7 @@ input { font: inherit; }
     pointer-events: auto;
   }
 
-  .player .pill.next .thumb { opacity: 1; }
+  .player .pill.next .thumb { display: block; }
 }
 
 @media (prefers-reduced-motion: reduce) {
