@@ -26,7 +26,13 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const wrap = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const bar = useRef<HTMLDivElement>(null);
+  const settingsRoot = useRef<HTMLDivElement>(null);
   const idle = useRef<number | null>(null);
+  const reveal = useRef<number | null>(null);
+  const cursorIdle = useRef<number | null>(null);
+  const latestHidden = useRef(false);
+  const latestPillsVisible = useRef(false);
+  const wakeControls = useRef<(force?: boolean, pointerActivity?: boolean) => void>(() => {});
   const lastTouch = useRef<{ at: number; side: "left" | "right" } | null>(null);
   const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
   const pointerType = useRef("");
@@ -52,6 +58,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   });
   const [menu, setMenu] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [cursorHidden, setCursorHidden] = useState(false);
   const [locked, setLocked] = useState(false);
   const [pipSupported, setPipSupported] = useState(false);
   const [theater, setTheater] = useState(false);
@@ -133,10 +140,13 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     const node = video.current;
     if (!node) return;
     const onMeta = () => {
-      const total = node.duration || 0;
+      const total = Number.isFinite(node.duration) ? node.duration : 0;
       setDuration(total);
       const resume = progressFor(url);
       if (resume > 5 && resume < total - 15) node.currentTime = resume;
+    };
+    const onDuration = () => {
+      setDuration(Number.isFinite(node.duration) ? node.duration : 0);
     };
     const onTime = () => {
       setTime(node.currentTime);
@@ -171,6 +181,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       }
     };
     node.addEventListener("loadedmetadata", onMeta);
+    node.addEventListener("durationchange", onDuration);
     node.addEventListener("timeupdate", onTime);
     node.addEventListener("progress", onProgress);
     node.addEventListener("play", onPlay);
@@ -182,6 +193,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     node.addEventListener("volumechange", onVolume);
     return () => {
       node.removeEventListener("loadedmetadata", onMeta);
+      node.removeEventListener("durationchange", onDuration);
       node.removeEventListener("timeupdate", onTime);
       node.removeEventListener("progress", onProgress);
       node.removeEventListener("play", onPlay);
@@ -241,10 +253,36 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const ready = duration > 30;
   const showNext = Boolean(next) && ready && (time >= nextAt || (!playing && time >= duration - 0.5));
   const skipNow = ranges.find((range) => time >= range.start && time < range.end);
+  latestHidden.current = hidden;
+  latestPillsVisible.current = Boolean(skipNow || showNext);
 
-  // Keep the auto-hide timer independent from React's hidden state.
-  const wake = useCallback((force = false) => {
+  // Match Skin: keep a visible Skip / Next pill clickable before restoring the full bar.
+  const wake = useCallback((force = false, pointerActivity = true) => {
     if (latestLocked.current && !force) return;
+    if (pointerActivity) {
+      setCursorHidden(false);
+      if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
+      cursorIdle.current = null;
+      if (!video.current?.paused) {
+        cursorIdle.current = window.setTimeout(() => {
+          cursorIdle.current = null;
+          if (!video.current?.paused && !latestLocked.current) setCursorHidden(true);
+        }, 2500);
+      }
+    }
+    if (!force && latestHidden.current && latestPillsVisible.current) {
+      if (reveal.current === null) {
+        reveal.current = window.setTimeout(() => {
+          reveal.current = null;
+          wakeControls.current(true, false);
+        }, 1500);
+      }
+      return;
+    }
+    if (reveal.current !== null) {
+      window.clearTimeout(reveal.current);
+      reveal.current = null;
+    }
     if (idle.current !== null) window.clearTimeout(idle.current);
     idle.current = null;
     setHidden(false);
@@ -252,14 +290,20 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       idle.current = window.setTimeout(() => {
         idle.current = null;
         if (!video.current?.paused && !latestLocked.current) setHidden(true);
-      }, 2800);
+      }, 2500);
     }
   }, []);
+  wakeControls.current = wake;
 
   const lockControls = () => {
     if (idle.current !== null) window.clearTimeout(idle.current);
+    if (reveal.current !== null) window.clearTimeout(reveal.current);
+    if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
     idle.current = null;
+    reveal.current = null;
+    cursorIdle.current = null;
     latestLocked.current = true;
+    setCursorHidden(false);
     setLocked(true);
     setHidden(true);
     setMenu(false);
@@ -276,12 +320,21 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       wake();
     } else {
       if (idle.current !== null) window.clearTimeout(idle.current);
+      if (reveal.current !== null) window.clearTimeout(reveal.current);
+      if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
       idle.current = null;
+      reveal.current = null;
+      cursorIdle.current = null;
       setHidden(false);
+      setCursorHidden(false);
     }
     return () => {
       if (idle.current !== null) window.clearTimeout(idle.current);
+      if (reveal.current !== null) window.clearTimeout(reveal.current);
+      if (cursorIdle.current !== null) window.clearTimeout(cursorIdle.current);
       idle.current = null;
+      reveal.current = null;
+      cursorIdle.current = null;
     };
   }, [playing, wake]);
 
@@ -312,12 +365,34 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     return () => document.removeEventListener("fullscreenchange", onFull);
   }, []);
 
+  useEffect(() => {
+    if (!menu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !settingsRoot.current?.contains(event.target)) {
+        setMenu(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menu]);
+
   const hoverCue = useMemo(() => {
     if (!hover || !cues.length) return null;
     return cues.find((cue) => hover.time >= cue.start && hover.time < cue.end) || null;
   }, [hover, cues]);
 
   const seekWidth = bar.current?.clientWidth ?? 0;
+  const playedPercent = duration > 0 ? (time / duration) * 100 : 0;
+  const bufferedPercent = duration > 0 && buffered > 0
+    ? (buffered / duration) * 100
+    : playedPercent;
   const hoverHalfWidth = Math.min((hoverCue?.w ?? 40) / 2, seekWidth / 2);
   const hoverLeft = hover && seekWidth
     ? Math.min(Math.max(hover.x, hoverHalfWidth), seekWidth - hoverHalfWidth)
@@ -341,15 +416,6 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       backgroundPosition: `-${cue.x}px -${cue.y}px`,
       transform: `translate(${(width - cue.w * scale) / 2}px, ${(height - cue.h * scale) / 2}px) scale(${scale})`,
     } as const;
-  };
-
-  const seekTo = (clientX: number) => {
-    const node = video.current;
-    const track = bar.current;
-    if (!node || !track) return;
-    const rect = track.getBoundingClientRect();
-    const ratio = (clientX - rect.left) / rect.width;
-    node.currentTime = Math.min(Math.max(0, ratio), 1) * (node.duration || 0);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -406,13 +472,20 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     if (touchGesture.current?.pointerId === event.pointerId) touchGesture.current = null;
   };
 
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    handlePointerEnd(event);
+    wrap.current?.focus({ preventScroll: true });
+  };
+
   return (
     <div
       ref={wrap}
-      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
+      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${cursorHidden ? " cursor-hidden" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
+      tabIndex={-1}
+      onFocusCapture={() => wake()}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
+      onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerEnd}
     >
       <video
@@ -425,7 +498,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       />
 
       {error && <div className="player-error">{error}</div>}
-      {!data && !error && <div className="spinner" />}
+      {!data && !error && <div className="spinner is-visible" />}
       {data && buffering && <div className="spinner" />}
 
       <button
@@ -462,32 +535,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
         </div>
 
         <div
-          className="seek"
+          className="seek-wrap"
           dir="ltr"
           ref={bar}
-          role="slider"
-          tabIndex={0}
-          aria-label="Seek"
-          aria-valuemin={0}
-          aria-valuemax={duration || 0}
-          aria-valuenow={Math.min(time, duration || 0)}
-          aria-valuetext={`${formatTime(time)} of ${formatTime(duration)}`}
-          onKeyDown={(event) => {
-            if (!video.current) return;
-            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-              event.preventDefault();
-              seekBy(-5);
-            } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-              event.preventDefault();
-              seekBy(5);
-            } else if (event.key === "Home") {
-              event.preventDefault();
-              video.current.currentTime = 0;
-            } else if (event.key === "End") {
-              event.preventDefault();
-              video.current.currentTime = video.current.duration || 0;
-            }
-          }}
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             if (!rect.width) return;
@@ -495,14 +545,34 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
             setHover({ x: ratio * rect.width, time: ratio * duration });
           }}
           onPointerLeave={() => setHover(null)}
-          onPointerDown={(event) => {
-            seekTo(event.clientX);
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
         >
-          <div className="track">
-            <b style={{ width: `${duration ? (buffered / duration) * 100 : 0}%` }} />
-            <i style={{ width: `${duration ? (time / duration) * 100 : 0}%` }} />
+          <input
+            className="seek"
+            type="range"
+            dir="ltr"
+            min="0"
+            max={duration || 0}
+            step="0.1"
+            value={Math.min(time, duration || 0)}
+            aria-label="Seek"
+            aria-valuetext={formatTime(time) + " of " + formatTime(duration)}
+            onChange={(event) => {
+              const node = video.current;
+              const targetTime = Number(event.currentTarget.value);
+              if (!node || latestLocked.current || !Number.isFinite(targetTime)) return;
+              node.currentTime = targetTime;
+              setTime(targetTime);
+            }}
+          />
+          <div className="chapters" aria-hidden="true">
+            <i
+              style={{
+                background:
+                  "linear-gradient(to right, #2563eb 0 " + playedPercent + "%, " +
+                  "rgba(255, 255, 255, .4) " + playedPercent + "% " + bufferedPercent + "%, " +
+                  "rgba(255, 255, 255, .18) " + bufferedPercent + "% 100%)",
+              }}
+            />
           </div>
           {hover && hoverCue && (
             <div className="hover-frame" style={{ left: hoverLeft }} aria-hidden="true">
@@ -510,11 +580,6 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
                 <i style={frameStyle(hoverCue, hoverCue.w, hoverCue.h)} />
                 <span className="preview-time">{formatTime(hover.time)}</span>
               </div>
-            </div>
-          )}
-          {hover && !hoverCue && (
-            <div className="hover-time" style={{ left: Math.min(Math.max(hover.x, 20), seekWidth - 20) }}>
-              {formatTime(hover.time)}
             </div>
           )}
           {hover && (
@@ -557,6 +622,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
             <input
               className="volume"
               type="range"
+              dir="ltr"
               min="0"
               max="1"
               step="0.01"
@@ -605,17 +671,18 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           >
             <Icon name="pip" />
           </button>
-          <div className="settings">
+          <div className="settings" ref={settingsRoot}>
             <button
               className="btn"
               type="button"
               onClick={() => setMenu(!menu)}
               aria-label="Settings"
+              aria-haspopup="dialog"
               aria-expanded={menu}
             >
               <Icon name="settings" />
             </button>
-            <div className="panel" hidden={!menu}>
+            <div className="panel" role="dialog" aria-label="Player settings" hidden={!menu}>
               <div className="panel-label">Quality</div>
               {data?.sources.length ? data.sources.map((item, index) => (
                 <button
@@ -637,8 +704,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
                     setMenu(false);
                   }}
                 >
-                  <span>{item.label}</span>
-                  {item.premium && <span className="premium-label">Premium</span>}
+                  <span>{item.premium && !/premium/i.test(item.label) ? `${item.label} Premium` : item.label}</span>
                   <Icon name="check" size={16} />
                 </button>
               )) : <span className="panel-empty">No quality sources available</span>}
