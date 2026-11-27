@@ -392,6 +392,18 @@ const SOURCE_HOOK: &str = r#"(function () {
   var pendingBody = null;
   var visible = __VISIBLE__;
 
+  function loopbackPermission() {
+    if (!navigator.permissions || !navigator.permissions.query) {
+      return Promise.resolve("prompt");
+    }
+    return navigator.permissions.query({ name: "loopback-network" }).then(function (status) {
+      return status.state;
+    }).catch(function () {
+      // Older WebViews do not recognize this permission name. Use an explicit button.
+      return "prompt";
+    });
+  }
+
   function send(text) {
     if (captured || sending || !text) return;
     sending = true;
@@ -406,7 +418,10 @@ const SOURCE_HOOK: &str = r#"(function () {
       pendingBody = null;
     }).catch(function () {
       sending = false;
-      // The visible retry exposes a user-gesture button for loopback permission prompts.
+      if (visible) {
+        var label = document.getElementById("a3-checking-label");
+        if (label) label.textContent = "تعذر الاتصال المحلي. راجع إذن الشبكة المحلية ثم حاول مجدداً.";
+      }
     });
   }
 
@@ -417,16 +432,18 @@ const SOURCE_HOOK: &str = r#"(function () {
   function sendResponse(status, body) {
     if (status < 200 || status >= 300 || !body) return;
     pendingBody = body;
-    if (visible) {
-      showStatus(true);
-    } else {
-      // Try the quiet path first. If loopback access needs a gesture, the visible
-      // retry will ask the user to continue from its button.
-      send(body);
-    }
+    loopbackPermission().then(function (permission) {
+      if (permission === "granted") {
+        send(body);
+      } else if (visible) {
+        showStatus(permission);
+      }
+      // When a hidden WebView has no permission, let its short timeout lead to the
+      // visible retry rather than triggering a permission request without a gesture.
+    });
   }
 
-  function showStatus(ready) {
+  function showStatus(permission) {
     if (!visible || !document.body) return;
     var banner = document.getElementById("a3-checking");
     if (!banner) {
@@ -461,13 +478,17 @@ const SOURCE_HOOK: &str = r#"(function () {
       document.body.appendChild(banner);
     }
 
-    if (ready || pendingBody) {
+    if (pendingBody) {
       var status = document.getElementById("a3-checking-label");
       var button = document.getElementById("a3-checking-continue");
-      if (status) status.textContent = "تم تجهيز مصادر الفيديو";
+      if (status) {
+        status.textContent = permission === "denied"
+          ? "الوصول المحلي محظور. فعّل إذن الشبكة المحلية من إعدادات الموقع."
+          : "تم تجهيز المصادر. اضغط للسماح بإرسالها إلى التطبيق.";
+      }
       if (button) {
         button.disabled = false;
-        button.textContent = "السماح والمتابعة";
+        button.textContent = permission === "denied" ? "حاول مجدداً" : "السماح والمتابعة";
       }
     }
   }
@@ -475,10 +496,10 @@ const SOURCE_HOOK: &str = r#"(function () {
   if (visible) {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", function () {
-        showStatus(Boolean(pendingBody));
+        showStatus("prompt");
       });
     } else {
-      showStatus(Boolean(pendingBody));
+      showStatus("prompt");
     }
   }
 
