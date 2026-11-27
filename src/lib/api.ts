@@ -26,6 +26,34 @@ export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
 export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
 export const episodeThumbnails = (urls: string[]) =>
   invoke<EpisodeThumbnail[]>("episode_thumbnails", { urls });
+
+const episodeThumbnailCache = new Map<string, string>();
+const episodeThumbnailRequests = new Map<string, Promise<string>>();
+
+export function episodeThumbnail(url: string): Promise<string> {
+  const cached = episodeThumbnailCache.get(url);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = episodeThumbnailRequests.get(url);
+  if (pending) return pending;
+
+  const request = episodeThumbnails([url])
+    .then((results) => {
+      const image = results.find((item) => item.url === url)?.image ?? "";
+      if (image) {
+        if (episodeThumbnailCache.size >= 240) {
+          const oldest = episodeThumbnailCache.keys().next().value;
+          if (oldest) episodeThumbnailCache.delete(oldest);
+        }
+        episodeThumbnailCache.set(url, image);
+      }
+      return image;
+    })
+    .finally(() => episodeThumbnailRequests.delete(url));
+
+  episodeThumbnailRequests.set(url, request);
+  return request;
+}
 export const skips = (title: string, episode: number, length: number) =>
   invoke<Skips>("skips", { title, episode, length });
 
