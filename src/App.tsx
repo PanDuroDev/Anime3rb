@@ -6,6 +6,7 @@ import {
   Anime,
   Card,
   Episode,
+  episodeThumbnails,
   Home,
   Progress,
   anime as fetchAnime,
@@ -427,6 +428,8 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
   const [error, setError] = useState("");
   const [episodeQuery, setEpisodeQuery] = useState("");
   const [episodePage, setEpisodePage] = useState(1);
+  const [episodeImages, setEpisodeImages] = useState<Record<string, string>>({});
+  const requestedEpisodeImages = useRef(new Set<string>());
 
   useEffect(() => {
     let live = true;
@@ -434,6 +437,8 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
     setError("");
     setEpisodeQuery("");
     setEpisodePage(1);
+    setEpisodeImages({});
+    requestedEpisodeImages.current.clear();
     fetchAnime(url)
       .then((result) => live && setData(result))
       .catch((reason) => live && setError(String(reason)));
@@ -443,25 +448,50 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
   }, [url]);
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
-
-  if (error) return <ErrorState message={error} />;
-  if (!data) return <AnimeSkeleton />;
-
-  const first = data.episodes[0]?.number ?? 1;
   const normalizedQuery = episodeQuery.trim().toLocaleLowerCase();
-  const filteredEpisodes = normalizedQuery
-    ? data.episodes.filter((item) =>
-        `${item.number} episode ${item.number} الحلقة ${item.number} ${item.name}`
-          .toLocaleLowerCase()
-          .includes(normalizedQuery)
-      )
-    : data.episodes;
+  const filteredEpisodes = useMemo(() => {
+    const episodes = data?.episodes ?? [];
+    return normalizedQuery
+      ? episodes.filter((item) =>
+          `${item.number} episode ${item.number} الحلقة ${item.number} ${item.name}`
+            .toLocaleLowerCase()
+            .includes(normalizedQuery)
+        )
+      : episodes;
+  }, [data, normalizedQuery]);
   const pageCount = Math.max(1, Math.ceil(filteredEpisodes.length / EPISODES_PER_PAGE));
   const activePage = Math.min(episodePage, pageCount);
   const startIndex = (activePage - 1) * EPISODES_PER_PAGE;
-  const visibleEpisodes = filteredEpisodes.slice(startIndex, startIndex + EPISODES_PER_PAGE);
+  const visibleEpisodes = useMemo(
+    () => filteredEpisodes.slice(startIndex, startIndex + EPISODES_PER_PAGE),
+    [filteredEpisodes, startIndex]
+  );
   const firstVisible = filteredEpisodes.length ? startIndex + 1 : 0;
   const lastVisible = Math.min(startIndex + EPISODES_PER_PAGE, filteredEpisodes.length);
+
+  useEffect(() => {
+    if (!data || data.url !== url) return;
+
+    const pending = visibleEpisodes.filter(
+      (item) => !episodeImages[item.url] && !requestedEpisodeImages.current.has(item.url)
+    );
+    if (!pending.length) return;
+
+    pending.forEach((item) => requestedEpisodeImages.current.add(item.url));
+    episodeThumbnails(pending.map((item) => item.url))
+      .then((results) => {
+        setEpisodeImages((current) => {
+          const next = { ...current };
+          for (const result of results) {
+            if (result.image) next[result.url] = result.image;
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        pending.forEach((item) => requestedEpisodeImages.current.delete(item.url));
+      });
+  }, [data, url, visibleEpisodes, episodeImages]);
 
   return (
     <div className="anime-page">
@@ -512,7 +542,7 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
             {visibleEpisodes.map((item) => (
               <EpisodeCard
                 key={item.number}
-                image={data.image}
+                image={episodeImages[item.url] ?? ""}
                 item={item}
                 current={false}
                 progress={seen.get(item.url)}
@@ -653,6 +683,28 @@ function WatchView({
   );
 }
 
+function EpisodeArtwork({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return <span className="image-placeholder" aria-hidden="true" />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function EpisodeCard({
   image,
   item,
@@ -679,7 +731,7 @@ function EpisodeCard({
       title={layout === "list" ? item.name : undefined}
     >
       <span className="ep-thumb">
-        <Img src={image} />
+        {layout === "grid" ? <EpisodeArtwork src={image} /> : <Img src={image} />}
         {percent > 0 && (
           <span className="ep-bar">
             <i style={{ width: `${percent}%` }} />
