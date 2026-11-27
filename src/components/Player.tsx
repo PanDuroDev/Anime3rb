@@ -76,6 +76,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const [contentEnd, setContentEnd] = useState(0);
 
   const current = data?.sources[source];
+  const ended = Boolean(video.current?.ended);
   latestLocked.current = locked;
 
   useEffect(() => {
@@ -319,7 +320,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
 
   const hoverCue = useMemo(() => {
     if (!hover || !cues.length) return null;
-    return cues.find((cue) => hover.time >= cue.start && hover.time < cue.end) || cues[cues.length - 1];
+    return cues.find((cue) => hover.time >= cue.start && hover.time < cue.end) || null;
   }, [hover, cues]);
 
   const seekWidth = bar.current?.clientWidth ?? 0;
@@ -431,8 +432,13 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       {!data && !error && <div className="spinner" />}
       {data && buffering && <div className="spinner" />}
 
-      <button className="center" type="button" onClick={toggle} aria-label="Play">
-        <Icon name={playing ? "pause" : "play"} size={26} />
+      <button
+        className="center"
+        type="button"
+        onClick={toggle}
+        aria-label={ended ? "Replay" : playing ? "Pause" : "Play"}
+      >
+        <Icon name={playing ? "pause" : ended ? "refresh" : "play"} size={26} />
       </button>
 
       <div className="controls" data-bar>
@@ -523,8 +529,13 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
         </div>
 
         <div className="row" dir="ltr">
-          <button className="btn" type="button" onClick={toggle} aria-label="Play">
-            <Icon name={playing ? "pause" : "play"} />
+          <button
+            className="btn"
+            type="button"
+            onClick={toggle}
+            aria-label={ended ? "Replay" : playing ? "Pause" : "Play"}
+          >
+            <Icon name={playing ? "pause" : ended ? "refresh" : "play"} />
           </button>
           <button className="btn" type="button" onClick={() => seekBy(-10)} aria-label="Back 10 seconds">
             <Icon name="rewind-back-10" />
@@ -532,21 +543,21 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           <button className="btn" type="button" onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
             <Icon name="rewind-forward-10" />
           </button>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => {
-              const node = video.current;
-              if (!node) return;
-              node.muted = !node.muted;
-              syncVolume();
-            }}
-            aria-label="Mute"
-            aria-pressed={muted}
-          >
-            <Icon name={muted || volume === 0 ? "volume-mute" : "volume"} />
-          </button>
           <div className="volume-wrap">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                const node = video.current;
+                if (!node) return;
+                node.muted = !node.muted;
+                syncVolume();
+              }}
+              aria-label="Mute"
+              aria-pressed={muted}
+            >
+              <Icon name={muted || volume === 0 ? "volume-mute" : "volume"} />
+            </button>
             <input
               className="volume"
               type="range"
