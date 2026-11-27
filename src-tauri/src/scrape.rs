@@ -1,5 +1,9 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const BASE: &str = "https://anime3rb.com";
@@ -66,6 +70,7 @@ async fn get(url: &str) -> Result<String, String> {
         match client
             .get(url)
             .header("accept-language", "ar,en;q=0.8")
+            .header("referer", BASE)
             .send()
             .await
         {
@@ -145,8 +150,11 @@ pub async fn home() -> Result<Home, String> {
         .max_by_key(|list| list_items(list).len())
         .map(list_items)
         .unwrap_or_default();
-    // The home page only lists 8 new titles; the catalog page shows 20.
-    let titles = browse_page(1).await.unwrap_or_default();
+    // The home page only lists 8 new titles; the catalog has 20 per page, so take a few pages.
+    let mut titles = Vec::new();
+    for page in 1..=3 {
+        titles.extend(browse_page(page).await.unwrap_or_default());
+    }
 
     let mut rails = Vec::new();
     if !episodes.is_empty() {
@@ -334,7 +342,7 @@ pub async fn anime(url: String) -> Result<Anime, String> {
 }
 
 #[tauri::command]
-pub async fn episode(url: String) -> Result<EpisodeData, String> {
+pub async fn episode(app: AppHandle, url: String) -> Result<EpisodeData, String> {
     let html = unescape(&get(&url).await?);
     let player = regex::Regex::new(r#""video_url":"(https:[^"]+)""#).unwrap();
     let player_url = player
@@ -344,20 +352,7 @@ pub async fn episode(url: String) -> Result<EpisodeData, String> {
         .ok_or_else(|| "This episode has no player".to_string())?;
 
     let page = get(&player_url).await?;
-    let sources = regex::Regex::new(r"(?s)video_sources\s*=\s*(\[.*?\]);").unwrap();
-    // The page declares the array twice, first empty; keep the populated one.
-    let mut best: Vec<Value> = Vec::new();
-    for cap in sources.captures_iter(&page) {
-        if let Ok(items) = serde_json::from_str::<Vec<Value>>(&cap[1]) {
-            if items.len() > best.len() {
-                best = items;
-            }
-        }
-    }
-    if best.is_empty() {
-        return Err("No video sources found".to_string());
-    }
-    let parsed = best;
+    let parsed = browser_sources(&app, &player_url).await?;
     let sources = parsed
         .iter()
         .filter_map(|item| {
@@ -382,6 +377,107 @@ pub async fn episode(url: String) -> Result<EpisodeData, String> {
         poster: poster.find(&page).map(|m| m.as_str().to_string()).unwrap_or_default(),
         thumbs: thumbs.find(&page).map(|m| m.as_str().to_string()).unwrap_or_default(),
     })
+}
+
+/// The player page asks Cloudflare for a Turnstile token before it requests the sources, so a
+/// plain HTTP client gets nothing. A hidden webview runs the real challenge and its XHR is
+/// forwarded to a loopback listener started here.
+static WINDOW_ID: AtomicU64 = AtomicU64::new(0);
+
+const SOURCE_HOOK: &str = r#"(function () {
+  var send = function (text) {
+    fetch("http://127.0.0.1:__PORT__/", { method: "POST", body: text }).catch(function () {});
+  };
+  var open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this.__a3url = url;
+    return open.apply(this, arguments);
+  };
+  var start = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function () {
+    var xhr = this;
+    if (xhr.__a3url && String(xhr.__a3url).indexOf("/sources") > -1) {
+      xhr.addEventListener("load", function () {
+        try {
+          var video = document.querySelector("video");
+          if (video) { video.muted = true; video.pause(); video.removeAttribute("src"); video.load(); }
+        } catch (e) {}
+        send(xhr.responseText);
+      });
+    }
+    return start.apply(this, arguments);
+  };
+  document.addEventListener("play", function (event) { event.target.muted = true; }, true);
+})();"#;
+
+fn callback_server() -> (u16, std::sync::mpsc::Receiver<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().expect("loopback address").port();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut stream = stream;
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 4096];
+            let mut length: Option<usize> = None;
+            loop {
+                let read = match stream.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => n,
+                };
+                buf.extend_from_slice(&chunk[..read]);
+                if length.is_none() {
+                    if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&buf[..end]).to_lowercase();
+                        length = Some(
+                            head.lines()
+                                .find_map(|line| line.strip_prefix("content-length:"))
+                                .and_then(|value| value.trim().parse().ok())
+                                .unwrap_or(0),
+                        );
+                        buf.drain(..end + 4);
+                    }
+                }
+                if length.is_some_and(|len| buf.len() >= len) {
+                    break;
+                }
+            }
+            let _ = stream.write_all(
+                b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            let body = String::from_utf8_lossy(&buf).to_string();
+            if !body.trim().is_empty() {
+                let _ = tx.send(body);
+                break;
+            }
+        }
+    });
+    (port, rx)
+}
+
+async fn browser_sources(app: &AppHandle, player_url: &str) -> Result<Vec<Value>, String> {
+    let (port, rx) = callback_server();
+    let label = format!("sources-{}", WINDOW_ID.fetch_add(1, Ordering::Relaxed));
+    let script = SOURCE_HOOK.replace("__PORT__", &port.to_string());
+    let window = WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::External(player_url.parse().map_err(|e| format!("{e}"))?),
+    )
+    .visible(false)
+    .initialization_script(&script)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    let body = tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(30))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|_| "The player did not answer in time".to_string())?;
+    let _ = window.close();
+
+    serde_json::from_str(&body).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -9,7 +9,6 @@ import {
   Progress,
   anime as fetchAnime,
   browse,
-  formatTime,
   home as fetchHome,
   readProgress,
   search as searchTitles,
@@ -118,29 +117,95 @@ function CardGrid({ items, open }: { items: Card[]; open: (url: string) => void 
             <Img src={item.image} />
             {item.episode ? <span className="badge">EP {item.episode}</span> : null}
           </span>
-          <span className="card-name">{item.name}</span>
+          <span className="card-name" title={item.name}>
+            {item.name}
+          </span>
         </button>
       ))}
     </div>
   );
 }
 
-function Rail({ title, items, open }: { title: string; items: Card[]; open: (url: string) => void }) {
+/** Horizontal shelf with arrow buttons and a hidden scrollbar. */
+function Rail({
+  title,
+  items,
+  open,
+  progress,
+}: {
+  title: string;
+  items: Card[];
+  open: (item: Card) => void;
+  progress?: Map<string, Progress>;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: true, end: false });
+
+  const measure = () => {
+    const box = scroller.current;
+    if (!box) return;
+    setEdges({
+      start: box.scrollLeft <= 4,
+      end: box.scrollLeft + box.clientWidth >= box.scrollWidth - 4,
+    });
+  };
+
+  useEffect(() => {
+    measure();
+  }, [items]);
+
+  const page = (direction: number) => {
+    const box = scroller.current;
+    if (!box) return;
+    box.scrollBy({ left: direction * box.clientWidth * 0.9, behavior: "smooth" });
+  };
+
   return (
     <section className="rail">
       <div className="section-head">
         <h2>{title}</h2>
       </div>
-      <div className="rail-scroll">
-        {items.map((item) => (
-          <button className="rail-card" key={item.url} type="button" onClick={() => open(item.url)}>
-            <span className="poster">
-              <Img src={item.image} />
-              {item.episode ? <span className="badge">EP {item.episode}</span> : null}
-            </span>
-            <span className="card-name">{item.name}</span>
-          </button>
-        ))}
+      <div className="rail-wrap">
+        <button
+          className="rail-arrow start"
+          type="button"
+          aria-label="Scroll left"
+          disabled={edges.start}
+          onClick={() => page(-1)}
+        >
+          <Icon name="arrowRight" size={18} />
+        </button>
+        <div className="rail-scroll" ref={scroller} onScroll={measure}>
+          {items.map((item) => {
+            const seen = progress?.get(item.url);
+            const percent = seen && seen.duration ? Math.min(100, (seen.time / seen.duration) * 100) : 0;
+            return (
+              <button className="rail-card" key={item.url} type="button" onClick={() => open(item)}>
+                <span className="poster">
+                  <Img src={item.image} />
+                  {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                  {percent > 0 && (
+                    <span className="pbar">
+                      <i style={{ width: `${percent}%` }} />
+                    </span>
+                  )}
+                </span>
+                <span className="card-name" title={item.name}>
+                  {item.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          className="rail-arrow end"
+          type="button"
+          aria-label="Scroll right"
+          disabled={edges.end}
+          onClick={() => page(1)}
+        >
+          <Icon name="arrowRight" size={18} />
+        </button>
       </div>
     </section>
   );
@@ -150,6 +215,17 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
   const [data, setData] = useState<Home | null>(null);
   const [error, setError] = useState("");
   const history = useMemo<Progress[]>(() => readProgress().filter((item) => item.time > 5), []);
+  const seen = useMemo(() => new Map(history.map((item) => [item.url, item])), [history]);
+  const watching = useMemo<Card[]>(
+    () =>
+      history.map((item) => ({
+        name: item.anime,
+        url: item.url,
+        image: item.image,
+        episode: episodeNumber(item.url),
+      })),
+    [history]
+  );
 
   useEffect(() => {
     fetchHome()
@@ -162,34 +238,16 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
 
   return (
     <>
-      {history.length > 0 && (
-        <section className="rail">
-          <div className="section-head">
-            <h2>Continue watching</h2>
-          </div>
-          <div className="rail-scroll">
-            {history.map((item) => (
-              <button
-                className="rail-card"
-                key={item.url}
-                type="button"
-                onClick={() => resume(animeUrlFor(item.url), episodeNumber(item.url))}
-              >
-                <span className="poster">
-                  <Img src={item.image} />
-                  <span className="resume">{formatTime(item.time)}</span>
-                </span>
-                <span className="card-name">
-                  {item.anime}
-                  <span className="ep-tag">EP {episodeNumber(item.url)}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
+      {watching.length > 0 && (
+        <Rail
+          title="Continue watching"
+          items={watching}
+          progress={seen}
+          open={(item) => resume(animeUrlFor(item.url), episodeNumber(item.url))}
+        />
       )}
       {data.rails.map((rail) => (
-        <Rail key={rail.title} title={rail.title} items={rail.items} open={open} />
+        <Rail key={rail.title} title={rail.title} items={rail.items} open={(item) => open(item.url)} />
       ))}
     </>
   );
@@ -281,6 +339,7 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
   if (!data) return <p className="notice">Loading…</p>;
 
   const first = data.episodes[0]?.number ?? 1;
+  const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
 
   return (
     <div className="anime-page">
@@ -313,7 +372,14 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
         </div>
         <div className="ep-grid">
           {data.episodes.map((item) => (
-            <EpisodeCard key={item.number} image={data.image} item={item} current={false} onPlay={play} />
+            <EpisodeCard
+              key={item.number}
+              image={data.image}
+              item={item}
+              current={false}
+              progress={seen.get(item.url)}
+              onPlay={play}
+            />
           ))}
         </div>
       </section>
@@ -348,6 +414,8 @@ function WatchView({
     const card = box?.querySelector<HTMLElement>(".is-current");
     if (box && card) box.scrollTop = card.offsetTop - box.clientHeight / 2 + card.clientHeight / 2;
   }, [number, data]);
+
+  const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
   if (error) return <p className="notice">{error}</p>;
   if (!data) return <p className="notice">Loading…</p>;
@@ -402,6 +470,7 @@ function WatchView({
                 image={data.image}
                 item={item}
                 current={item.number === current.number}
+                progress={seen.get(item.url)}
                 onPlay={open}
               />
             ))}
@@ -416,14 +485,18 @@ function EpisodeCard({
   image,
   item,
   current,
+  progress,
   onPlay,
 }: {
   image: string;
   item: Episode;
   current: boolean;
+  progress?: Progress;
   onPlay: (number: number) => void;
 }) {
   const title = episodeTitle(item.name, item.number);
+  const percent = progress?.duration ? Math.min(100, (progress.time / progress.duration) * 100) : 0;
+  const watched = percent >= 92;
   return (
     <button
       className={`ep-card${current ? " is-current" : ""}`}
@@ -433,9 +506,17 @@ function EpisodeCard({
     >
       <span className="ep-thumb">
         <Img src={image} />
+        {percent > 0 && (
+          <span className="ep-bar">
+            <i style={{ width: `${percent}%` }} />
+          </span>
+        )}
       </span>
       <span className="ep-text">
-        <span className="ep-num">Episode {item.number}</span>
+        <span className="ep-num">
+          Episode {item.number}
+          {watched && <span className="ep-done">Watched</span>}
+        </span>
         {title && <span className="ep-name">{title}</span>}
       </span>
     </button>
