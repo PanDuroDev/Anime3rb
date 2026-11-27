@@ -15,6 +15,7 @@ export function useImage(src?: string) {
       setUrl(hit);
       return;
     }
+    setUrl(undefined);
     let live = true;
     invoke<string>("image", { url: src })
       .then((data) => {
