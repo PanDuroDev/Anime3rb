@@ -252,7 +252,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       idle.current = window.setTimeout(() => {
         idle.current = null;
         if (!video.current?.paused && !latestLocked.current) setHidden(true);
-      }, 2800);
+      }, 2500);
     }
   }, []);
 
@@ -318,6 +318,10 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   }, [hover, cues]);
 
   const seekWidth = bar.current?.clientWidth ?? 0;
+  const playedPercent = duration > 0 ? Math.min(100, Math.max(0, (time / duration) * 100)) : 0;
+  const bufferedPercent = duration > 0
+    ? Math.min(100, Math.max(playedPercent, (buffered / duration) * 100))
+    : playedPercent;
   const hoverHalfWidth = Math.min((hoverCue?.w ?? 40) / 2, seekWidth / 2);
   const hoverLeft = hover && seekWidth
     ? Math.min(Math.max(hover.x, hoverHalfWidth), seekWidth - hoverHalfWidth)
@@ -341,15 +345,6 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       backgroundPosition: `-${cue.x}px -${cue.y}px`,
       transform: `translate(${(width - cue.w * scale) / 2}px, ${(height - cue.h * scale) / 2}px) scale(${scale})`,
     } as const;
-  };
-
-  const seekTo = (clientX: number) => {
-    const node = video.current;
-    const track = bar.current;
-    if (!node || !track) return;
-    const rect = track.getBoundingClientRect();
-    const ratio = (clientX - rect.left) / rect.width;
-    node.currentTime = Math.min(Math.max(0, ratio), 1) * (node.duration || 0);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -462,32 +457,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
         </div>
 
         <div
-          className="seek"
+          className="seek-wrap"
           dir="ltr"
           ref={bar}
-          role="slider"
-          tabIndex={0}
-          aria-label="Seek"
-          aria-valuemin={0}
-          aria-valuemax={duration || 0}
-          aria-valuenow={Math.min(time, duration || 0)}
-          aria-valuetext={`${formatTime(time)} of ${formatTime(duration)}`}
-          onKeyDown={(event) => {
-            if (!video.current) return;
-            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-              event.preventDefault();
-              seekBy(-5);
-            } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-              event.preventDefault();
-              seekBy(5);
-            } else if (event.key === "Home") {
-              event.preventDefault();
-              video.current.currentTime = 0;
-            } else if (event.key === "End") {
-              event.preventDefault();
-              video.current.currentTime = video.current.duration || 0;
-            }
-          }}
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             if (!rect.width) return;
@@ -495,14 +467,33 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
             setHover({ x: ratio * rect.width, time: ratio * duration });
           }}
           onPointerLeave={() => setHover(null)}
-          onPointerDown={(event) => {
-            seekTo(event.clientX);
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
         >
-          <div className="track">
-            <b style={{ width: `${duration ? (buffered / duration) * 100 : 0}%` }} />
-            <i style={{ width: `${duration ? (time / duration) * 100 : 0}%` }} />
+          <input
+            className="seek"
+            type="range"
+            min="0"
+            max={duration || 0}
+            step="0.1"
+            value={Math.min(time, duration || 0)}
+            aria-label="Seek"
+            aria-valuetext={formatTime(time) + " of " + formatTime(duration)}
+            onChange={(event) => {
+              const node = video.current;
+              const targetTime = Number(event.currentTarget.value);
+              if (!node || latestLocked.current || !Number.isFinite(targetTime)) return;
+              node.currentTime = targetTime;
+              setTime(targetTime);
+            }}
+          />
+          <div className="chapters" aria-hidden="true">
+            <i
+              style={{
+                background:
+                  "linear-gradient(to right, #2563eb 0 " + playedPercent + "%, " +
+                  "rgba(255, 255, 255, .4) " + playedPercent + "% " + bufferedPercent + "%, " +
+                  "rgba(255, 255, 255, .18) " + bufferedPercent + "% 100%)",
+              }}
+            />
           </div>
           {hover && hoverCue && (
             <div className="hover-frame" style={{ left: hoverLeft }} aria-hidden="true">
