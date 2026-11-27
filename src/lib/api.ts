@@ -13,7 +13,7 @@ export type Anime = {
   episodes: Episode[];
 };
 export type Source = { label: string; res: string; premium: boolean; src: string };
-export type EpisodeData = { sources: Source[]; poster: string; thumbs: string; thumbnailPage: string };
+export type EpisodeData = { sources: Source[]; poster: string; thumbs: string; thumbnail_page: string };
 export type ThumbnailData = { poster: string; thumbs: string };
 export type Skips = { ranges: { start: number; end: number }[]; content_end: number };
 
