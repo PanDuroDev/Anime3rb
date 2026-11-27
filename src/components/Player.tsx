@@ -389,9 +389,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   }, [hover, cues]);
 
   const seekWidth = bar.current?.clientWidth ?? 0;
-  const playedPercent = duration > 0 ? Math.min(100, Math.max(0, (time / duration) * 100)) : 0;
-  const bufferedPercent = duration > 0
-    ? Math.min(100, Math.max(playedPercent, (buffered / duration) * 100))
+  const playedPercent = duration > 0 ? (time / duration) * 100 : 0;
+  const bufferedPercent = duration > 0 && buffered > 0
+    ? (buffered / duration) * 100
     : playedPercent;
   const hoverHalfWidth = Math.min((hoverCue?.w ?? 40) / 2, seekWidth / 2);
   const hoverLeft = hover && seekWidth
