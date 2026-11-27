@@ -32,6 +32,8 @@ export function useImage(src?: string) {
 
 export function Img({ src, alt = "", className }: { src?: string; alt?: string; className?: string }) {
   const url = useImage(src);
-  if (!url) return null;
-  return <img className={className} src={url} alt={alt} loading="lazy" />;
+  if (!url) {
+    return <span className={`image-placeholder${className ? ` ${className}` : ""}`} aria-hidden="true" />;
+  }
+  return <img className={className} src={url} alt={alt} loading="lazy" decoding="async" />;
 }
