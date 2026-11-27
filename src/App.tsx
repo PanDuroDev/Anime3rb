@@ -6,6 +6,7 @@ import {
   Anime,
   Card,
   Episode,
+  episodeThumbnail,
   episodeThumbnails,
   Home,
   Progress,
@@ -602,20 +603,25 @@ function WatchView({
 }) {
   const [data, setData] = useState<Anime | null>(null);
   const [error, setError] = useState("");
-  const side = useRef<HTMLDivElement>(null);
+  const [side, setSide] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    let live = true;
+    setData(null);
+    setError("");
     fetchAnime(url)
-      .then(setData)
-      .catch((reason) => setError(String(reason)));
+      .then((result) => live && setData(result))
+      .catch((reason) => live && setError(String(reason)));
+    return () => {
+      live = false;
+    };
   }, [url]);
 
   // Keep the active episode visible in the sidebar without scrolling the page.
   useEffect(() => {
-    const box = side.current;
-    const card = box?.querySelector<HTMLElement>(".is-current");
-    if (box && card) box.scrollTop = card.offsetTop - box.clientHeight / 2 + card.clientHeight / 2;
-  }, [number, data]);
+    const card = side?.querySelector<HTMLElement>(".is-current");
+    if (side && card) side.scrollTop = card.offsetTop - side.clientHeight / 2 + card.clientHeight / 2;
+  }, [number, data, side]);
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
@@ -665,15 +671,17 @@ function WatchView({
             <h2>Episodes</h2>
             <span className="count">{data.episodes.length}</span>
           </div>
-          <div className="side-list" ref={side}>
+          <div className="side-list" ref={setSide}>
             {data.episodes.map((item) => (
               <EpisodeCard
                 key={item.number}
-                image={data.image}
+                image=""
                 item={item}
                 current={item.number === current.number}
                 progress={seen.get(item.url)}
                 onPlay={open}
+                layout="sidebar"
+                thumbnailRoot={side}
               />
             ))}
           </div>
@@ -683,20 +691,66 @@ function WatchView({
   );
 }
 
-function EpisodeArtwork({ src }: { src: string }) {
+function EpisodeArtwork({
+  src,
+  episodeUrl,
+  root,
+}: {
+  src?: string;
+  episodeUrl?: string;
+  root?: Element | null;
+}) {
+  const target = useRef<HTMLSpanElement>(null);
+  const [loaded, setLoaded] = useState("");
   const [failed, setFailed] = useState(false);
+  const image = src || loaded;
 
   useEffect(() => {
+    setLoaded("");
     setFailed(false);
-  }, [src]);
+  }, [src, episodeUrl]);
 
-  if (!src || failed) {
-    return <span className="image-placeholder" aria-hidden="true" />;
+  useEffect(() => {
+    if (src || !episodeUrl) return;
+    let live = true;
+    const load = () => {
+      episodeThumbnail(episodeUrl)
+        .then((result) => live && setLoaded(result))
+        .catch(() => {});
+    };
+
+    const node = target.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      load();
+      return () => {
+        live = false;
+      };
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          load();
+        }
+      },
+      { root: root ?? null, rootMargin: "180px 0px" }
+    );
+    observer.observe(node);
+
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
+  }, [src, episodeUrl, root]);
+
+  if (!image || failed) {
+    return <span ref={target} className="image-placeholder" aria-hidden="true" />;
   }
 
   return (
     <img
-      src={src}
+      src={image}
       alt=""
       loading="lazy"
       decoding="async"
@@ -712,26 +766,32 @@ function EpisodeCard({
   progress,
   onPlay,
   layout = "list",
+  thumbnailRoot,
 }: {
   image: string;
   item: Episode;
   current: boolean;
   progress?: Progress;
   onPlay: (number: number) => void;
-  layout?: "grid" | "list";
+  layout?: "grid" | "list" | "sidebar";
+  thumbnailRoot?: Element | null;
 }) {
   const title = episodeTitle(item.name, item.number);
   const percent = progress?.duration ? Math.min(100, (progress.time / progress.duration) * 100) : 0;
   const watched = percent >= 92;
   return (
     <button
-      className={`ep-card${current ? " is-current" : ""}${layout === "grid" ? " is-grid" : ""}`}
+      className={`ep-card${current ? " is-current" : ""}${layout === "grid" ? " is-grid" : ""}${layout === "sidebar" ? " is-sidebar" : ""}`}
       type="button"
       onClick={() => onPlay(item.number)}
       title={layout === "list" ? item.name : undefined}
     >
       <span className="ep-thumb">
-        {layout === "grid" ? <EpisodeArtwork src={image} /> : <Img src={image} />}
+        {layout === "grid"
+          ? <EpisodeArtwork src={image} />
+          : layout === "sidebar"
+            ? <EpisodeArtwork episodeUrl={item.url} root={thumbnailRoot} />
+            : <Img src={image} />}
         {percent > 0 && (
           <span className="ep-bar">
             <i style={{ width: `${percent}%` }} />
