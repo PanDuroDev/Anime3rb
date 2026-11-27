@@ -24,12 +24,28 @@ Every page on Anime3rb embeds its content as schema.org JSON-LD, so nothing is s
 | Latest episodes / new titles | `ItemList` on the home page |
 | Catalogue pages | `CollectionPage.mainEntity` on `/titles/list?page=N` |
 | Search | Livewire `search` component on `/titles/list` |
-| Anime + episodes | `TVSeries` node with `episode[]` |
+| Anime + episode list | `TVSeries` node with `episode[]` (15-minute in-memory cache) |
+| Episode still images | Kitsu → AniZip → Nogitsu; fetched only near the viewport and cached by 20/24-episode range |
 | Player + video sources | `video_url` on the episode page, then `video_sources` on the player page |
 | Skip times | AniSkip, after mapping the title to MAL through AniList |
 
 All requests run in Rust, so there is no CORS restriction. Streams play directly from the signed
 `video.vid3rb.com` URLs, and posters are proxied through Rust because the image CDN blocks foreign referers.
+
+Episode artwork is deliberately independent from Anime3rb's image endpoints:
+
+1. [Kitsu](https://hummingbird-me.github.io/api-docs/) supplies per-episode thumbnails.
+2. [AniZip](https://api.ani.zip) supplies a cached AniList mapping with TVDB/AniDB episode stills.
+3. [Nogitsu](https://nogitsu.com/developers) supplies a range of stills aggregated from providers such as TVDB and TMDB.
+
+The first provider with an exact episode-number match wins. No series-cover fallback is used.
+Metadata is cached in memory for 24 hours, requests are deduplicated and serialized, and Nogitsu
+calls are paced below its published 120-requests-per-minute limit. Anime3rb remains responsible
+for its catalogue, episode URLs and playback; it is not queried for episode artwork.
+
+Nogitsu's public API is free for non-commercial use with attribution. Episode artwork rights remain
+with their respective source providers and are used only to identify the corresponding episode.
+The app credits Kitsu, AniZip and Nogitsu in its footer.
 
 ## Development
 
