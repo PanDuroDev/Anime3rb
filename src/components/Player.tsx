@@ -40,6 +40,11 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const wrap = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const bar = useRef<HTMLDivElement>(null);
+  const idle = useRef<number | null>(null);
+  const lastTouch = useRef<{ at: number; side: "left" | "right" } | null>(null);
+  const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
+  const pointerType = useRef("");
+  const latestLocked = useRef(false);
 
   const [data, setData] = useState<EpisodeData | null>(null);
   const [error, setError] = useState("");
@@ -50,9 +55,19 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const [buffering, setBuffering] = useState(false);
   const [buffered, setBuffered] = useState(0);
   const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(() => {
+    try {
+      const saved = localStorage.getItem("a3:volume");
+      const value = saved === null ? 1 : Number(saved);
+      return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+    } catch {
+      return 1;
+    }
+  });
   const [menu, setMenu] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [pipSupported, setPipSupported] = useState(false);
   const [theater, setTheater] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [cues, setCues] = useState<Cue[]>([]);
@@ -61,6 +76,8 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const [contentEnd, setContentEnd] = useState(0);
 
   const current = data?.sources[source];
+  const ended = Boolean(video.current?.ended);
+  latestLocked.current = locked;
 
   useEffect(() => {
     let live = true;
@@ -74,7 +91,16 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       .then((result) => {
         if (!live) return;
         setData(result);
-        const best = result.sources.reduce((pick, item, index) => (Number(item.res) > Number(result.sources[pick].res) ? index : pick), 0);
+        const freeSources = result.sources
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => !item.premium);
+        const candidates = freeSources.length
+          ? freeSources
+          : result.sources.map((item, index) => ({ item, index }));
+        const best = candidates.reduce(
+          (pick, entry) => Number(entry.item.res) > Number(result.sources[pick].res) ? entry.index : pick,
+          candidates[0]?.index ?? 0
+        );
         setSource(best);
         loadCues(result.thumbs).then((list) => live && setCues(list));
       })
@@ -149,6 +175,15 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       const total = node.duration || node.currentTime;
       save({ url, name: "", anime: "", image: "", time: total, duration: total, at: Date.now() });
     };
+    const onVolume = () => {
+      setVolume(node.volume);
+      setMuted(node.muted);
+      try {
+        localStorage.setItem("a3:volume", String(node.volume));
+      } catch {
+        // Storage can be unavailable in restricted WebView contexts.
+      }
+    };
     node.addEventListener("loadedmetadata", onMeta);
     node.addEventListener("timeupdate", onTime);
     node.addEventListener("progress", onProgress);
@@ -158,6 +193,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     node.addEventListener("playing", onReady);
     node.addEventListener("canplay", onReady);
     node.addEventListener("ended", onEnd);
+    node.addEventListener("volumechange", onVolume);
     return () => {
       node.removeEventListener("loadedmetadata", onMeta);
       node.removeEventListener("timeupdate", onTime);
@@ -168,6 +204,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       node.removeEventListener("playing", onReady);
       node.removeEventListener("canplay", onReady);
       node.removeEventListener("ended", onEnd);
+      node.removeEventListener("volumechange", onVolume);
     };
   }, [url, save]);
 
@@ -186,39 +223,81 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     if (node) node.currentTime = Math.min(Math.max(0, node.currentTime + delta), node.duration || 0);
   };
 
+  const syncVolume = useCallback(() => {
+    const node = video.current;
+    if (!node) return;
+    setVolume(node.volume);
+    setMuted(node.muted);
+    try {
+      localStorage.setItem("a3:volume", String(node.volume));
+    } catch {
+      // Storage can be unavailable in restricted WebView contexts.
+    }
+  }, []);
+
+  useEffect(() => {
+    const node = video.current;
+    if (!node) return;
+    node.volume = volume;
+    syncVolume();
+  }, []);
+
+  useEffect(() => {
+    const node = video.current;
+    setPipSupported(Boolean(
+      document.pictureInPictureEnabled &&
+      node &&
+      typeof node.requestPictureInPicture === "function"
+    ));
+  }, []);
+
   const nextAt = contentEnd > 0 && contentEnd < duration - 3 ? contentEnd : Math.max(0, duration - 20);
   const ready = duration > 30;
   const showNext = Boolean(next) && ready && (time >= nextAt || (!playing && time >= duration - 0.5));
   const skipNow = ranges.find((range) => time >= range.start && time < range.end);
 
-  // Idle: hide the bar while playing; pills get a short delay before the bar comes back.
-  const reveal = useRef(0);
-  const idle = useRef(0);
-  const pills = showNext || Boolean(skipNow);
-  const wake = useCallback(() => {
-    if (hidden && pills) {
-      if (!reveal.current) reveal.current = window.setTimeout(() => {
-        reveal.current = 0;
-        setHidden(false);
-      }, 1500);
-      return;
-    }
-    window.clearTimeout(reveal.current);
-    reveal.current = 0;
+  // Keep the auto-hide timer independent from React's hidden state.
+  const wake = useCallback((force = false) => {
+    if (latestLocked.current && !force) return;
+    if (idle.current !== null) window.clearTimeout(idle.current);
+    idle.current = null;
     setHidden(false);
-    window.clearTimeout(idle.current);
-    idle.current = window.setTimeout(() => {
-      if (!video.current?.paused) setHidden(true);
-    }, 2500);
-  }, [hidden, pills]);
+    if (!video.current?.paused) {
+      idle.current = window.setTimeout(() => {
+        idle.current = null;
+        if (!video.current?.paused && !latestLocked.current) setHidden(true);
+      }, 2800);
+    }
+  }, []);
+
+  const lockControls = () => {
+    if (idle.current !== null) window.clearTimeout(idle.current);
+    idle.current = null;
+    latestLocked.current = true;
+    setLocked(true);
+    setHidden(true);
+    setMenu(false);
+  };
+
+  const unlockControls = () => {
+    latestLocked.current = false;
+    setLocked(false);
+    wake(true);
+  };
 
   useEffect(() => {
-    wake();
+    if (playing) {
+      wake();
+    } else {
+      if (idle.current !== null) window.clearTimeout(idle.current);
+      idle.current = null;
+      setHidden(false);
+    }
     return () => {
-      window.clearTimeout(idle.current);
-      window.clearTimeout(reveal.current);
+      if (idle.current !== null) window.clearTimeout(idle.current);
+      idle.current = null;
     };
-  }, [wake]);
+  }, [playing, wake]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -240,13 +319,6 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const syncVolume = () => {
-    const node = video.current;
-    if (!node) return;
-    setVolume(node.volume);
-    setMuted(node.muted);
-  };
-
   useEffect(() => {
     const onFull = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFull);
@@ -255,8 +327,17 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
 
   const hoverCue = useMemo(() => {
     if (!hover || !cues.length) return null;
-    return cues.find((cue) => hover.time >= cue.start && hover.time < cue.end) || cues[cues.length - 1];
+    return cues.find((cue) => hover.time >= cue.start && hover.time < cue.end) || null;
   }, [hover, cues]);
+
+  const seekWidth = bar.current?.clientWidth ?? 0;
+  const hoverHalfWidth = Math.min((hoverCue?.w ?? 40) / 2, seekWidth / 2);
+  const hoverLeft = hover && seekWidth
+    ? Math.min(Math.max(hover.x, hoverHalfWidth), seekWidth - hoverHalfWidth)
+    : hover?.x ?? 0;
+  const nowLeft = seekWidth
+    ? Math.min(Math.max((duration ? time / duration : 0) * seekWidth, 20), seekWidth - 20)
+    : 0;
 
   const nextCue = useMemo(() => {
     if (!cues.length || !ready) return null;
@@ -284,23 +365,87 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     node.currentTime = Math.min(Math.max(0, ratio), 1) * (node.duration || 0);
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    pointerType.current = event.pointerType;
+    wake();
+    if (event.pointerType !== "touch" || locked) return;
+
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, .seek, .controls")) {
+      touchGesture.current = null;
+      return;
+    }
+
+    const rect = wrap.current?.getBoundingClientRect();
+    if (!rect) return;
+    const side = event.clientX < rect.left + rect.width / 2 ? "left" : "right";
+    const now = Date.now();
+    const previous = lastTouch.current;
+    if (previous && now - previous.at <= 320 && previous.side === side) {
+      seekBy(side === "left" ? -10 : 10);
+      lastTouch.current = null;
+      touchGesture.current = null;
+      return;
+    }
+
+    lastTouch.current = { at: now, side };
+    touchGesture.current = side === "right"
+      ? { pointerId: event.pointerId, startY: event.clientY, startVolume: video.current?.volume ?? volume, active: false }
+      : null;
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = touchGesture.current;
+    if (event.pointerType === "touch" && gesture?.pointerId === event.pointerId && !locked) {
+      const delta = gesture.startY - event.clientY;
+      if (Math.abs(delta) > 8) gesture.active = true;
+      if (gesture.active && wrap.current) {
+        lastTouch.current = null;
+        const node = video.current;
+        if (node) {
+          node.volume = Math.min(1, Math.max(0, gesture.startVolume + delta / wrap.current.clientHeight));
+          node.muted = node.volume === 0;
+          syncVolume();
+        }
+        return;
+      }
+    }
+    wake();
+  };
+
+  const handlePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (touchGesture.current?.pointerId === event.pointerId) touchGesture.current = null;
+  };
+
   return (
     <div
       ref={wrap}
-      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}`}
-      onPointerMove={wake}
-      onClick={(event) => {
-        if (event.target === video.current) toggle();
-      }}
+      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
     >
-      <video ref={video} playsInline poster={data?.poster} onClick={toggle} />
+      <video
+        ref={video}
+        playsInline
+        poster={data?.poster}
+        onClick={() => {
+          if (pointerType.current !== "touch") toggle();
+        }}
+      />
 
       {error && <div className="player-error">{error}</div>}
       {!data && !error && <div className="spinner" />}
       {data && buffering && <div className="spinner" />}
 
-      <button className="center" type="button" onClick={toggle} aria-label="Play">
-        <Icon name={playing ? "pause" : "play"} size={26} />
+      <button
+        className="center"
+        type="button"
+        onClick={toggle}
+        aria-label={ended ? "Replay" : playing ? "Pause" : "Play"}
+      >
+        <Icon name={playing ? "pause" : ended ? "refresh" : "play"} size={26} />
       </button>
 
       <div className="controls" data-bar>
@@ -331,8 +476,32 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           className="seek"
           dir="ltr"
           ref={bar}
+          role="slider"
+          tabIndex={0}
+          aria-label="Seek"
+          aria-valuemin={0}
+          aria-valuemax={duration || 0}
+          aria-valuenow={Math.min(time, duration || 0)}
+          aria-valuetext={`${formatTime(time)} of ${formatTime(duration)}`}
+          onKeyDown={(event) => {
+            if (!video.current) return;
+            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+              event.preventDefault();
+              seekBy(-5);
+            } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+              event.preventDefault();
+              seekBy(5);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              video.current.currentTime = 0;
+            } else if (event.key === "End") {
+              event.preventDefault();
+              video.current.currentTime = video.current.duration || 0;
+            }
+          }}
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
+            if (!rect.width) return;
             const ratio = Math.min(Math.max(0, (event.clientX - rect.left) / rect.width), 1);
             setHover({ x: ratio * rect.width, time: ratio * duration });
           }}
@@ -347,23 +516,33 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
             <b style={{ width: `${duration ? (buffered / duration) * 100 : 0}%` }} />
           </div>
           {hover && hoverCue && (
-            <div className="hover-frame" style={{ left: hover.x }} aria-hidden="true">
-              <div className="crop">
-                <i style={frameStyle(hoverCue, 172, 96)} />
+            <div className="hover-frame" style={{ left: hoverLeft }} aria-hidden="true">
+              <div className="crop" style={{ width: hoverCue.w, height: hoverCue.h }}>
+                <i style={frameStyle(hoverCue, hoverCue.w, hoverCue.h)} />
+                <span className="preview-time">{formatTime(hover.time)}</span>
               </div>
-              <span>{formatTime(hover.time)}</span>
             </div>
           )}
           {hover && !hoverCue && (
-            <div className="hover-time" style={{ left: hover.x }}>
+            <div className="hover-time" style={{ left: Math.min(Math.max(hover.x, 20), seekWidth - 20) }}>
               {formatTime(hover.time)}
+            </div>
+          )}
+          {hover && (
+            <div className="now-chip" style={{ left: nowLeft }} aria-hidden="true">
+              {formatTime(time)}
             </div>
           )}
         </div>
 
         <div className="row" dir="ltr">
-          <button className="btn" type="button" onClick={toggle} aria-label="Play">
-            <Icon name={playing ? "pause" : "play"} />
+          <button
+            className="btn"
+            type="button"
+            onClick={toggle}
+            aria-label={ended ? "Replay" : playing ? "Pause" : "Play"}
+          >
+            <Icon name={playing ? "pause" : ended ? "refresh" : "play"} />
           </button>
           <button className="btn" type="button" onClick={() => seekBy(-10)} aria-label="Back 10 seconds">
             <Icon name="rewind-back-10" />
@@ -371,20 +550,40 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           <button className="btn" type="button" onClick={() => seekBy(10)} aria-label="Forward 10 seconds">
             <Icon name="rewind-forward-10" />
           </button>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => {
-              const node = video.current;
-              if (!node) return;
-              node.muted = !node.muted;
-              syncVolume();
-            }}
-            aria-label="Mute"
-            aria-pressed={muted}
-          >
-            <Icon name={muted || volume === 0 ? "volume-mute" : "volume"} />
-          </button>
+          <div className="volume-wrap">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                const node = video.current;
+                if (!node) return;
+                node.muted = !node.muted;
+                syncVolume();
+              }}
+              aria-label="Mute"
+              aria-pressed={muted}
+            >
+              <Icon name={muted || volume === 0 ? "volume-mute" : "volume"} />
+            </button>
+            <input
+              className="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={muted ? 0 : volume}
+              style={{ "--volume-progress": `${(muted ? 0 : volume) * 100}%` } as React.CSSProperties}
+              aria-label="Volume"
+              title={`Volume ${Math.round(volume * 100)}%`}
+              onChange={(event) => {
+                const node = video.current;
+                if (!node) return;
+                node.volume = Number(event.currentTarget.value);
+                node.muted = node.volume === 0;
+                syncVolume();
+              }}
+            />
+          </div>
           <span className="time">
             {formatTime(time)} / {formatTime(duration)}
           </span>
@@ -401,13 +600,17 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           <button
             className="btn"
             type="button"
+            disabled={!pipSupported}
+            title={pipSupported ? "Picture in picture" : "Picture-in-picture is unavailable"}
             onClick={async () => {
+              const node = video.current;
+              if (!node || !pipSupported) return;
               try {
-                const node = video.current;
-                if (!node) return;
                 if (document.pictureInPictureElement) await document.exitPictureInPicture();
                 else await node.requestPictureInPicture();
-              } catch {}
+              } catch {
+                setMenu(false);
+              }
             }}
             aria-label="Picture in picture"
           >
@@ -428,7 +631,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
               {data?.sources.map((item, index) => (
                 <button
                   key={item.src}
-                  className={`option${index === source ? " is-selected" : ""}`}
+                  className={`option${index === source ? " is-selected" : ""}${item.premium ? " is-premium" : ""}`}
                   type="button"
                   onClick={() => {
                     const node = video.current;
@@ -445,12 +648,16 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
                     setMenu(false);
                   }}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {item.premium && <span className="premium-label">Premium</span>}
                   <Icon name="check" size={16} />
                 </button>
               ))}
             </div>
           </div>
+          <button className="btn" type="button" onClick={lockControls} aria-label="Lock controls" aria-pressed={locked} title="Lock controls">
+            <Icon name="lock" />
+          </button>
           <button
             className="btn"
             type="button"
@@ -464,6 +671,12 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           </button>
         </div>
       </div>
+      {locked && (
+        <button className="unlock" type="button" onClick={unlockControls} aria-label="Unlock controls" title="Unlock controls">
+          <Icon name="unlock" size={20} />
+          <span>Unlock</span>
+        </button>
+      )}
     </div>
   );
 }
