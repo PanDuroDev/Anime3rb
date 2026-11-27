@@ -11,6 +11,7 @@ pub fn run() {
             scrape::browse,
             scrape::anime,
             scrape::episode,
+            scrape::episode_thumbnails,
             scrape::thumbnail_info,
             scrape::thumbnail_vtt,
             scrape::image,
