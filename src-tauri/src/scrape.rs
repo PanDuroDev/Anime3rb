@@ -298,22 +298,7 @@ async fn resolve_kitsu_anime_id(anime_url: &str, anime_name: &str) -> Result<Str
     }
 }
 
-async fn kitsu_episode_page(
-    anime_id: &str,
-    episode_number: u32,
-) -> Result<HashMap<u32, String>, String> {
-    let offset = kitsu_episode_page_offset(episode_number);
-    let cache_key = format!("episode-page:{anime_id}:{offset}");
-    if let Some(cached) = kitsu_cache_get(&cache_key) {
-        if let Ok(images) = serde_json::from_str::<HashMap<u32, String>>(&cached) {
-            return Ok(images);
-        }
-    }
-
-    let endpoint = format!(
-        "{KITSU_API}/anime/{anime_id}/episodes?page%5Blimit%5D={KITSU_PAGE_SIZE}&page%5Boffset%5D={offset}"
-    );
-    let payload = kitsu_json(&endpoint).await?;
+fn parse_kitsu_episode_images(payload: &Value) -> HashMap<u32, String> {
     let mut images = HashMap::new();
     if let Some(records) = payload.get("data").and_then(Value::as_array) {
         for record in records {
@@ -336,6 +321,26 @@ async fn kitsu_episode_page(
             }
         }
     }
+    images
+}
+
+async fn kitsu_episode_page(
+    anime_id: &str,
+    episode_number: u32,
+) -> Result<HashMap<u32, String>, String> {
+    let offset = kitsu_episode_page_offset(episode_number);
+    let cache_key = format!("episode-page:{anime_id}:{offset}");
+    if let Some(cached) = kitsu_cache_get(&cache_key) {
+        if let Ok(images) = serde_json::from_str::<HashMap<u32, String>>(&cached) {
+            return Ok(images);
+        }
+    }
+
+    let endpoint = format!(
+        "{KITSU_API}/anime/{anime_id}/episodes?page%5Blimit%5D={KITSU_PAGE_SIZE}&page%5Boffset%5D={offset}"
+    );
+    let payload = kitsu_json(&endpoint).await?;
+    let images = parse_kitsu_episode_images(&payload);
 
     if let Ok(serialized) = serde_json::to_string(&images) {
         kitsu_cache_put(cache_key, serialized);
@@ -1164,3 +1169,100 @@ mod episode_thumbnail_tests {
     }
 }
 
+
+
+#[cfg(test)]
+mod kitsu_thumbnail_tests {
+    use serde_json::json;
+
+    #[test]
+    fn normalizes_titles_and_requires_an_exact_catalog_match() {
+        assert_eq!(super::normalize_kitsu_title("One Piece"), "onepiece");
+        assert_eq!(super::normalize_kitsu_title("ONE-PIECE!"), "onepiece");
+
+        let one_piece = json!({
+            "attributes": {
+                "slug": "one-piece",
+                "canonicalTitle": "One Piece",
+                "titles": { "en": "One Piece", "ja_jp": "ONE PIECE" }
+            }
+        });
+        let film = json!({
+            "attributes": {
+                "slug": "one-piece-film-z",
+                "canonicalTitle": "One Piece Film: Z",
+                "titles": { "en": "One Piece Film Z" }
+            }
+        });
+
+        assert_eq!(super::kitsu_match_score(&one_piece, "onepiece", "onepiece"), 3);
+        assert_eq!(super::kitsu_match_score(&one_piece, "onepiece", "different"), 2);
+        assert_eq!(super::kitsu_match_score(&film, "onepiece", "onepiece"), 0);
+    }
+
+    #[test]
+    fn episode_pages_use_twenty_item_offsets() {
+        assert_eq!(super::kitsu_episode_page_offset(1), 0);
+        assert_eq!(super::kitsu_episode_page_offset(20), 0);
+        assert_eq!(super::kitsu_episode_page_offset(21), 20);
+        assert_eq!(super::kitsu_episode_page_offset(41), 40);
+    }
+
+    #[test]
+    fn accepts_only_kitsu_image_hosts_over_https() {
+        assert!(super::valid_kitsu_image_url(
+            "https://media.kitsu.app/episodes/thumbnails/123/original.jpg"
+        ));
+        assert!(super::valid_kitsu_image_url(
+            "https://media.kitsu.io/episodes/thumbnails/123/original.jpg"
+        ));
+        assert!(!super::valid_kitsu_image_url("http://media.kitsu.app/image.jpg"));
+        assert!(!super::valid_kitsu_image_url("https://evil.example/image.jpg"));
+    }
+
+    #[test]
+    fn extracts_only_numbered_episode_images_from_a_kitsu_page() {
+        let payload = json!({
+            "data": [
+                {
+                    "attributes": {
+                        "number": 21,
+                        "thumbnail": {
+                            "original": "https://media.kitsu.app/episodes/thumbnails/21/original.jpg"
+                        }
+                    }
+                },
+                {
+                    "attributes": {
+                        "number": 22,
+                        "thumbnail": { "original": "https://wrong.example/22.jpg" }
+                    }
+                },
+                {
+                    "attributes": {
+                        "number": 23,
+                        "thumbnail": { "original": null }
+                    }
+                }
+            ]
+        });
+
+        let images = super::parse_kitsu_episode_images(&payload);
+        assert_eq!(
+            images.get(&21).map(String::as_str),
+            Some("https://media.kitsu.app/episodes/thumbnails/21/original.jpg")
+        );
+        assert!(!images.contains_key(&22));
+        assert!(!images.contains_key(&23));
+    }
+
+    #[test]
+    fn accepts_only_anime3rb_title_urls_for_mapping() {
+        assert_eq!(
+            super::anime3rb_title_slug("https://anime3rb.com/titles/one-piece").unwrap(),
+            "one-piece"
+        );
+        assert!(super::anime3rb_title_slug("https://evil.example/titles/one-piece").is_err());
+        assert!(super::anime3rb_title_slug("https://anime3rb.com/episode/1").is_err());
+    }
+}
