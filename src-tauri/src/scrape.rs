@@ -76,6 +76,7 @@ pub struct EpisodeThumbnail {
 }
 
 static EPISODE_THUMBNAIL_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static EPISODE_THUMBNAIL_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 
 fn cached_episode_thumbnail(url: &str) -> Option<String> {
     EPISODE_THUMBNAIL_CACHE
@@ -484,7 +485,12 @@ pub async fn episode_thumbnails(urls: Vec<String>) -> Result<Vec<EpisodeThumbnai
         return Err(format!("A maximum of {MAX_BATCH} episode thumbnails can be requested at once"));
     }
 
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT));
+    // Share one semaphore across command invocations so lazy sidebar cards cannot
+    // multiply the number of concurrent requests while the user scrolls quickly.
+    let semaphore = Arc::clone(
+        EPISODE_THUMBNAIL_SEMAPHORE
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT))),
+    );
     let mut tasks = tokio::task::JoinSet::new();
 
     for url in urls {
