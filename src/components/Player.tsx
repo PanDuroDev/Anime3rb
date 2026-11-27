@@ -596,7 +596,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
               ))}
             </div>
           </div>
-          <button className="btn" type="button" onClick={lockControls} aria-label="Lock controls" title="Lock controls">
+          <button className="btn" type="button" onClick={lockControls} aria-label="Lock controls" aria-pressed={locked} title="Lock controls">
             <Icon name="lock" />
           </button>
           <button
