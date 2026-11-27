@@ -146,16 +146,19 @@ pub async fn home() -> Result<Home, String> {
         .filter(|node| node.get("@type").and_then(Value::as_str) == Some("ItemList"))
         .collect();
 
-    let episodes = lists
+    let mut episodes = lists
         .iter()
         .max_by_key(|list| list_items(list).len())
         .map(list_items)
         .unwrap_or_default();
+    episodes.truncate(30);
+
     // The home page only lists 8 new titles; the catalog has 20 per page, so take a few pages.
     let mut titles = Vec::new();
     for page in 1..=3 {
         titles.extend(browse_page(page).await.unwrap_or_default());
     }
+    titles.truncate(60);
 
     let mut rails = Vec::new();
     if !episodes.is_empty() {
