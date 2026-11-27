@@ -17,9 +17,42 @@ export type EpisodeData = { sources: Source[]; poster: string; thumbs: string; t
 export type ThumbnailData = { poster: string; thumbs: string };
 export type Skips = { ranges: { start: number; end: number }[]; content_end: number };
 
-export const home = () => invoke<Home>("home");
-export const search = (query: string) => invoke<Card[]>("search", { query });
-export const browse = (page: number) => invoke<Card[]>("browse", { page });
+type RequestCacheEntry = { value: unknown; expiresAt: number };
+const requestCache = new Map<string, RequestCacheEntry>();
+const requestInflight = new Map<string, Promise<unknown>>();
+
+function cachedRequest<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
+  const cached = requestCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.value as T);
+  }
+  if (cached) requestCache.delete(key);
+
+  const pending = requestInflight.get(key);
+  if (pending) return pending as Promise<T>;
+
+  const request = load()
+    .then((value) => {
+      if (requestCache.size >= 120) {
+        const oldest = requestCache.keys().next().value;
+        if (oldest) requestCache.delete(oldest);
+      }
+      requestCache.set(key, { value, expiresAt: Date.now() + ttl });
+      return value;
+    })
+    .finally(() => requestInflight.delete(key));
+
+  requestInflight.set(key, request);
+  return request;
+}
+
+export const home = () => cachedRequest("home", 5 * 60 * 1000, () => invoke<Home>("home"));
+export const search = (query: string) =>
+  cachedRequest(`search:${query.trim().toLocaleLowerCase()}`, 5 * 60 * 1000, () =>
+    invoke<Card[]>("search", { query })
+  );
+export const browse = (page: number) =>
+  cachedRequest(`browse:${page}`, 15 * 60 * 1000, () => invoke<Card[]>("browse", { page }));
 const animeCache = new Map<string, { data: Anime; expiresAt: number }>();
 const animeRequests = new Map<string, Promise<Anime>>();
 const ANIME_CACHE_TTL = 15 * 60 * 1000;
