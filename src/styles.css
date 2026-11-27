@@ -1265,7 +1265,9 @@ input { font: inherit; }
   white-space: nowrap;
 }
 
-.center {
+/* Match the skin's center play button. This selector must outrank
+   .player button, which otherwise resets its background and foreground. */
+.player .center {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1285,10 +1287,10 @@ input { font: inherit; }
   transition: opacity .18s ease, transform .18s ease;
 }
 
-.center:hover,
-.center:focus-visible { opacity: .88; transform: translate(-50%, -50%) scale(1); }
-.center:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
-.center svg { width: 26px; height: 26px; fill: currentColor; margin-inline-start: 2px; }
+.player .center:hover,
+.player .center:focus-visible { opacity: .88; transform: translate(-50%, -50%) scale(1); }
+.player .center:focus-visible { outline: 2px solid #f1f1f1; outline-offset: 3px; }
+.player .center svg { width: 26px; height: 26px; fill: currentColor; margin-inline-start: 2px; }
 
 .player.is-playing .center, .player.is-buffering .center { opacity: 0; pointer-events: none; transform: translate(-50%, -50%) scale(.9); }
 .player.hide .center { opacity: 0; pointer-events: none; }
