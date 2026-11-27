@@ -27,6 +27,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const video = useRef<HTMLVideoElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const idle = useRef<number | null>(null);
+  const reveal = useRef<number | null>(null);
+  const latestHidden = useRef(false);
+  const latestPillsVisible = useRef(false);
   const lastTouch = useRef<{ at: number; side: "left" | "right" } | null>(null);
   const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
   const pointerType = useRef("");
@@ -241,10 +244,25 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const ready = duration > 30;
   const showNext = Boolean(next) && ready && (time >= nextAt || (!playing && time >= duration - 0.5));
   const skipNow = ranges.find((range) => time >= range.start && time < range.end);
+  latestHidden.current = hidden;
+  latestPillsVisible.current = Boolean(skipNow || showNext);
 
-  // Keep the auto-hide timer independent from React's hidden state.
+  // Match Skin: keep a visible Skip / Next pill clickable before restoring the full bar.
   const wake = useCallback((force = false) => {
     if (latestLocked.current && !force) return;
+    if (!force && latestHidden.current && latestPillsVisible.current) {
+      if (reveal.current === null) {
+        reveal.current = window.setTimeout(() => {
+          reveal.current = null;
+          wake(true);
+        }, 1500);
+      }
+      return;
+    }
+    if (reveal.current !== null) {
+      window.clearTimeout(reveal.current);
+      reveal.current = null;
+    }
     if (idle.current !== null) window.clearTimeout(idle.current);
     idle.current = null;
     setHidden(false);
@@ -258,7 +276,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
 
   const lockControls = () => {
     if (idle.current !== null) window.clearTimeout(idle.current);
+    if (reveal.current !== null) window.clearTimeout(reveal.current);
     idle.current = null;
+    reveal.current = null;
     latestLocked.current = true;
     setLocked(true);
     setHidden(true);
@@ -276,12 +296,16 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       wake();
     } else {
       if (idle.current !== null) window.clearTimeout(idle.current);
+      if (reveal.current !== null) window.clearTimeout(reveal.current);
       idle.current = null;
+      reveal.current = null;
       setHidden(false);
     }
     return () => {
       if (idle.current !== null) window.clearTimeout(idle.current);
+      if (reveal.current !== null) window.clearTimeout(reveal.current);
       idle.current = null;
+      reveal.current = null;
     };
   }, [playing, wake]);
 
