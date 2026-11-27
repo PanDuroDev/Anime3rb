@@ -797,7 +797,6 @@ function EpisodeCard({
       className={`ep-card${current ? " is-current" : ""}${layout === "grid" ? " is-grid" : ""}${layout === "sidebar" ? " is-sidebar" : ""}`}
       type="button"
       onClick={() => onPlay(item.number)}
-      title={layout === "list" ? item.name : undefined}
     >
       <span className="ep-thumb">
         <EpisodeArtwork
