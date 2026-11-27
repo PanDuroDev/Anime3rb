@@ -1,0 +1,413 @@
+use serde::Serialize;
+use serde_json::Value;
+
+const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const BASE: &str = "https://anime3rb.com";
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Card {
+    pub name: String,
+    pub url: String,
+    pub image: String,
+    pub episode: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct Rail {
+    pub title: String,
+    pub items: Vec<Card>,
+}
+
+#[derive(Serialize)]
+pub struct Home {
+    pub rails: Vec<Rail>,
+}
+
+#[derive(Serialize)]
+pub struct Episode {
+    pub number: u32,
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Serialize)]
+pub struct Anime {
+    pub name: String,
+    pub url: String,
+    pub image: String,
+    pub description: String,
+    pub genres: Vec<String>,
+    pub episodes: Vec<Episode>,
+}
+
+#[derive(Serialize)]
+pub struct Source {
+    pub label: String,
+    pub res: String,
+    pub premium: bool,
+    pub src: String,
+}
+
+#[derive(Serialize)]
+pub struct EpisodeData {
+    pub sources: Vec<Source>,
+    pub poster: String,
+    pub thumbs: String,
+}
+
+async fn get(url: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .user_agent(UA)
+        .build()
+        .map_err(|e| e.to_string())?;
+    // The CDN occasionally drops a connection; one retry is enough.
+    let mut last = String::new();
+    for _ in 0..2 {
+        match client
+            .get(url)
+            .header("accept-language", "ar,en;q=0.8")
+            .send()
+            .await
+        {
+            Ok(res) if res.status().is_success() => return res.text().await.map_err(|e| e.to_string()),
+            Ok(res) => last = format!("HTTP {}", res.status()),
+            Err(err) => last = err.to_string(),
+        }
+    }
+    Err(last)
+}
+
+fn unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+/// Every page carries its content as schema.org JSON-LD, so no HTML parsing is needed.
+fn ld_nodes(html: &str) -> Vec<Value> {
+    let re = regex::Regex::new(r#"(?s)<script type="application/ld\+json">(.*?)</script>"#).unwrap();
+    let mut nodes = Vec::new();
+    for cap in re.captures_iter(html) {
+        let Ok(value) = serde_json::from_str::<Value>(&cap[1]) else { continue };
+        match value.get("@graph") {
+            Some(Value::Array(items)) => nodes.extend(items.iter().cloned()),
+            _ => nodes.push(value),
+        }
+    }
+    nodes
+}
+
+fn s(value: Option<&Value>) -> String {
+    value.and_then(Value::as_str).unwrap_or_default().to_string()
+}
+
+fn episode_number(url: &str) -> Option<u32> {
+    url.rsplit('/').next()?.parse().ok()
+}
+
+fn card(value: &Value) -> Card {
+    let url = s(value.get("url"));
+    let mut name = s(value.get("name"));
+    // Episode titles carry an Arabic suffix ("… الحلقة 8") that the card already shows as a badge.
+    if url.contains("/episode/") {
+        if let Some(cut) = name.rfind("الحلقة") {
+            name.truncate(cut);
+            name = name.trim().to_string();
+        }
+    }
+    Card {
+        name,
+        image: s(value.get("image")),
+        episode: episode_number(&url),
+        url,
+    }
+}
+
+fn list_items(node: &Value) -> Vec<Card> {
+    node.get("itemListElement")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().map(card).collect())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn home() -> Result<Home, String> {
+    let html = get(&format!("{BASE}/")).await?;
+    let lists: Vec<Value> = ld_nodes(&html)
+        .into_iter()
+        .filter(|node| node.get("@type").and_then(Value::as_str) == Some("ItemList"))
+        .collect();
+
+    let episodes = lists
+        .iter()
+        .max_by_key(|list| list_items(list).len())
+        .map(list_items)
+        .unwrap_or_default();
+    // The home page only lists 8 new titles; the catalog page shows 20.
+    let titles = browse_page(1).await.unwrap_or_default();
+
+    let mut rails = Vec::new();
+    if !episodes.is_empty() {
+        rails.push(Rail { title: "Latest episodes".into(), items: episodes });
+    }
+    if !titles.is_empty() {
+        rails.push(Rail { title: "Recently added".into(), items: titles });
+    }
+    Ok(Home { rails })
+}
+
+/// Posters only load from a page whose referer is anime3rb itself, so the webview proxies them.
+#[tauri::command]
+pub async fn image(url: String) -> Result<String, String> {
+    if !url.starts_with("https://images.anime3rb.com/") {
+        return Err("Unsupported image URL".to_string());
+    }
+    let res = reqwest::Client::builder()
+        .user_agent(UA)
+        .build()
+        .map_err(|e| e.to_string())?
+        .get(&url)
+        .header("referer", BASE)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    let mime = res
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+    use base64::Engine;
+    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+#[tauri::command]
+pub async fn browse(page: u32) -> Result<Vec<Card>, String> {
+    browse_page(page).await
+}
+
+/// The catalog is paginated server-side at 20 titles per page; an empty page means the end.
+async fn browse_page(page: u32) -> Result<Vec<Card>, String> {
+    let html = get(&format!("{BASE}/titles/list?page={page}")).await?;
+    for node in ld_nodes(&html) {
+        if node.get("@type").and_then(Value::as_str) == Some("CollectionPage") {
+            if let Some(list) = node.get("mainEntity") {
+                return Ok(list_items(list));
+            }
+        }
+    }
+    Ok(Vec::new())
+}
+
+/// The site's `?q=` is ignored server-side: search is a Livewire component, so the query is
+/// pushed through its update endpoint with the snapshot taken from the catalog page.
+#[tauri::command]
+pub async fn search(query: String) -> Result<Vec<Card>, String> {
+    let client = reqwest::Client::builder().user_agent(UA).build().map_err(|e| e.to_string())?;
+    let res = client
+        .get(format!("{BASE}/titles/list"))
+        .header("accept-language", "ar,en;q=0.8")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+
+    let mut cookies = Vec::new();
+    let mut xsrf = String::new();
+    for value in res.headers().get_all(reqwest::header::SET_COOKIE) {
+        let Ok(raw) = value.to_str() else { continue };
+        let Some(pair) = raw.split(';').next() else { continue };
+        cookies.push(pair.to_string());
+        if let Some(token) = pair.strip_prefix("XSRF-TOKEN=") {
+            xsrf = urlencoding::decode(token).map(|v| v.into_owned()).unwrap_or_else(|_| token.to_string());
+        }
+    }
+
+    let html = res.text().await.map_err(|e| e.to_string())?;
+    let csrf = regex::Regex::new(r#"name="csrf-token" content="([^"]+)""#)
+        .unwrap()
+        .captures(&html)
+        .and_then(|cap| cap.get(1))
+        .map(|m| m.as_str().to_string())
+        .unwrap_or_default();
+    let snapshot = regex::Regex::new(r#"wire:snapshot="([^"]*)""#)
+        .unwrap()
+        .captures_iter(&html)
+        .map(|cap| unescape(&cap[1]))
+        .find(|value| value.contains(r#""name":"search""#))
+        .ok_or_else(|| "Search component not found".to_string())?;
+    let endpoint = regex::Regex::new(r"livewire-[a-z0-9]+/update")
+        .unwrap()
+        .find(&html)
+        .map(|m| m.as_str().to_string())
+        .ok_or_else(|| "Search endpoint not found".to_string())?;
+
+    let payload = serde_json::json!({
+        "_token": csrf,
+        "components": [{
+            "snapshot": snapshot,
+            "updates": { "query": query, "ready": true },
+            "calls": [{ "path": "", "method": "$refresh", "params": [] }]
+        }]
+    });
+    let res = client
+        .post(format!("{BASE}/{endpoint}"))
+        .header("accept-language", "ar,en;q=0.8")
+        .header("x-livewire", "1")
+        .header("x-csrf-token", &csrf)
+        .header("x-xsrf-token", &xsrf)
+        .header("cookie", cookies.join("; "))
+        .header("referer", format!("{BASE}/titles/list"))
+        .header("origin", BASE)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    let body: Value = res.json().await.map_err(|e| e.to_string())?;
+    let html = body
+        .pointer("/components/0/effects/html")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    let card = regex::Regex::new(
+        r#"(?s)<a\s+href="https://anime3rb\.com/titles/([^"]+)"[^>]*>\s*<img\s+src="([^"]+)"[^>]*>\s*<div[^>]*>\s*<h4[^>]*>([^<]*)</h4>"#,
+    )
+    .unwrap();
+    Ok(card
+        .captures_iter(html)
+        .map(|cap| Card {
+            name: unescape(&cap[3]).trim().to_string(),
+            url: format!("{BASE}/titles/{}", &cap[1]),
+            image: unescape(&cap[2]),
+            episode: None,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn anime(url: String) -> Result<Anime, String> {
+    let html = get(&url).await?;
+    let series = ld_nodes(&html)
+        .into_iter()
+        .find(|node| node.get("@type").and_then(Value::as_str) == Some("TVSeries"))
+        .ok_or_else(|| "No series data on this page".to_string())?;
+
+    let mut episodes: Vec<Episode> = series
+        .get("episode")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| Episode {
+                    number: s(item.get("episodeNumber")).parse().unwrap_or_default(),
+                    name: s(item.get("name")),
+                    url: s(item.get("url")),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    episodes.sort_by_key(|episode| episode.number);
+
+    Ok(Anime {
+        name: s(series.get("name")),
+        url: url.clone(),
+        image: s(series.get("image")),
+        description: s(series.get("description")),
+        genres: series
+            .get("genre")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().map(|g| s(Some(g))).collect())
+            .unwrap_or_default(),
+        episodes,
+    })
+}
+
+#[tauri::command]
+pub async fn episode(url: String) -> Result<EpisodeData, String> {
+    let html = unescape(&get(&url).await?);
+    let player = regex::Regex::new(r#""video_url":"(https:[^"]+)""#).unwrap();
+    let player_url = player
+        .captures(&html)
+        .and_then(|cap| cap.get(1))
+        .map(|m| m.as_str().replace("\\/", "/"))
+        .ok_or_else(|| "This episode has no player".to_string())?;
+
+    let page = get(&player_url).await?;
+    let sources = regex::Regex::new(r"(?s)video_sources\s*=\s*(\[.*?\]);").unwrap();
+    // The page declares the array twice, first empty; keep the populated one.
+    let mut best: Vec<Value> = Vec::new();
+    for cap in sources.captures_iter(&page) {
+        if let Ok(items) = serde_json::from_str::<Vec<Value>>(&cap[1]) {
+            if items.len() > best.len() {
+                best = items;
+            }
+        }
+    }
+    if best.is_empty() {
+        return Err("No video sources found".to_string());
+    }
+    let parsed = best;
+    let sources = parsed
+        .iter()
+        .filter_map(|item| {
+            let src = s(item.get("src"));
+            if src.is_empty() {
+                return None;
+            }
+            Some(Source {
+                label: s(item.get("label")),
+                res: s(item.get("res")),
+                premium: item.get("premium").and_then(Value::as_bool).unwrap_or(false),
+                src,
+            })
+        })
+        .collect();
+
+    let poster = regex::Regex::new(r#"https://thumbnails\.vid3rb\.com/[^'"\\]+/thumbnail\.001\.jpeg"#).unwrap();
+    let thumbs = regex::Regex::new(r#"https://thumbnails\.vid3rb\.com/[^'"\\]+/thumbnails\.vtt"#).unwrap();
+
+    Ok(EpisodeData {
+        sources,
+        poster: poster.find(&page).map(|m| m.as_str().to_string()).unwrap_or_default(),
+        thumbs: thumbs.find(&page).map(|m| m.as_str().to_string()).unwrap_or_default(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn scrapes_home_search_anime_and_episode() {
+        let home = super::home().await.unwrap();
+        assert!(!home.rails.is_empty(), "home has no rails");
+        assert!(!home.rails[0].items.is_empty());
+
+        let found = super::search("one piece".into()).await.unwrap();
+        assert!(
+            found.iter().any(|item| item.url == "https://anime3rb.com/titles/one-piece"),
+            "search did not find One Piece: {found:?}"
+        );
+
+        let first = super::browse(1).await.unwrap();
+        assert_eq!(first.len(), 20, "catalog page 1 should have 20 titles");
+        assert!(super::browse(5000).await.unwrap().is_empty(), "catalog should end");
+
+        let show = super::anime("https://anime3rb.com/titles/one-piece".into()).await.unwrap();
+        assert_eq!(show.name, "One Piece");
+        assert!(show.episodes.len() > 1000);
+
+        let ep = super::episode("https://anime3rb.com/episode/one-piece/1071".into()).await.unwrap();
+        assert!(ep.sources.iter().any(|s| s.res == "1080"), "no 1080p source");
+        assert!(!ep.poster.is_empty());
+    }
+}
