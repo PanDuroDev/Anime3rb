@@ -1,8 +1,10 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
@@ -65,6 +67,36 @@ pub struct EpisodeData {
 pub struct ThumbnailData {
     pub poster: String,
     pub thumbs: String,
+}
+
+#[derive(Serialize)]
+pub struct EpisodeThumbnail {
+    pub url: String,
+    pub image: String,
+}
+
+static EPISODE_THUMBNAIL_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static EPISODE_THUMBNAIL_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+
+fn cached_episode_thumbnail(url: &str) -> Option<String> {
+    EPISODE_THUMBNAIL_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()?
+        .get(url)
+        .cloned()
+}
+
+fn remember_episode_thumbnail(url: &str, image: &str) {
+    if let Ok(mut cache) = EPISODE_THUMBNAIL_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    {
+        if cache.len() >= 240 {
+            cache.clear();
+        }
+        cache.insert(url.to_string(), image.to_string());
+    }
 }
 
 fn thumbnail_data(page: &str) -> ThumbnailData {
@@ -400,14 +432,102 @@ pub async fn anime(url: String) -> Result<Anime, String> {
     })
 }
 
+fn extract_episode_player_url(html: &str) -> Option<String> {
+    let player = regex::Regex::new(r#""video_url":"(https:[^"]+)""#).ok()?;
+    player
+        .captures(html)
+        .and_then(|cap| cap.get(1))
+        .map(|value| value.as_str().replace("\\/", "/"))
+}
+
+async fn fetch_episode_thumbnail(url: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
+    let host = parsed.host_str().unwrap_or_default();
+    if parsed.scheme() != "https"
+        || !(host == "anime3rb.com" || host == "www.anime3rb.com")
+        || !parsed.path().starts_with("/episode/")
+    {
+        return Err("Unsupported episode URL".to_string());
+    }
+
+    let html = unescape(&get(url).await?);
+    let player_url = extract_episode_player_url(&html)
+        .ok_or_else(|| "This episode has no player page".to_string())?;
+    let player = reqwest::Url::parse(&player_url).map_err(|error| error.to_string())?;
+    let player_host = player.host_str().unwrap_or_default();
+    if player.scheme() != "https"
+        || !(player_host == "vid3rb.com" || player_host.ends_with(".vid3rb.com"))
+    {
+        return Err("Unsupported player page URL".to_string());
+    }
+
+    // The player itself uses this per-episode poster. Try the same lightweight lookup first;
+    // only use the retrying metadata helper when the poster is not present on the first response.
+    let player_page = get(&player_url).await.unwrap_or_default();
+    let poster = thumbnail_data(&player_page).poster;
+    if !poster.is_empty() {
+        return Ok(poster);
+    }
+
+    let thumbnails = thumbnail_info(player_url).await?;
+    if thumbnails.poster.is_empty() {
+        return Err("This episode has no thumbnail image".to_string());
+    }
+    Ok(thumbnails.poster)
+}
+
+#[tauri::command]
+pub async fn episode_thumbnails(urls: Vec<String>) -> Result<Vec<EpisodeThumbnail>, String> {
+    const MAX_BATCH: usize = 24;
+    const MAX_CONCURRENT: usize = 4;
+
+    if urls.len() > MAX_BATCH {
+        return Err(format!("A maximum of {MAX_BATCH} episode thumbnails can be requested at once"));
+    }
+
+    // Share one semaphore across command invocations so lazy sidebar cards cannot
+    // multiply the number of concurrent requests while the user scrolls quickly.
+    let semaphore = Arc::clone(
+        EPISODE_THUMBNAIL_SEMAPHORE
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT))),
+    );
+    let mut tasks = tokio::task::JoinSet::new();
+
+    for url in urls {
+        let semaphore = Arc::clone(&semaphore);
+        tasks.spawn(async move {
+            let _permit = match semaphore.acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => return EpisodeThumbnail { url, image: String::new() },
+            };
+
+            let image = match cached_episode_thumbnail(&url) {
+                Some(image) => image,
+                None => match fetch_episode_thumbnail(&url).await {
+                    Ok(image) => {
+                        remember_episode_thumbnail(&url, &image);
+                        image
+                    }
+                    Err(_) => String::new(),
+                },
+            };
+
+            EpisodeThumbnail { url, image }
+        });
+    }
+
+    let mut results = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        results.push(result.map_err(|error| format!("Episode thumbnail task failed: {error}"))?);
+    }
+
+    Ok(results)
+}
+
 #[tauri::command]
 pub async fn episode(app: AppHandle, url: String) -> Result<EpisodeData, String> {
     let html = unescape(&get(&url).await?);
-    let player = regex::Regex::new(r#""video_url":"(https:[^"]+)""#).unwrap();
-    let player_url = player
-        .captures(&html)
-        .and_then(|cap| cap.get(1))
-        .map(|m| m.as_str().replace("\\/", "/"))
+    let player_url = extract_episode_player_url(&html)
         .ok_or_else(|| "This episode has no player".to_string())?;
 
     // Source extraction must still run in the browser when the plain HTTP request is blocked.
@@ -841,3 +961,22 @@ mod source_parser_tests {
         assert!(super::parse_video_sources("not json").is_err());
     }
 }
+
+
+#[cfg(test)]
+mod episode_thumbnail_tests {
+    #[test]
+    fn extracts_player_url_from_episode_page_markup() {
+        let html = r#"<script>window.data = {"video_url":"https:\\/\\/vid3rb.com\\/player?id=episode-1"};</script>"#;
+        assert_eq!(
+            super::extract_episode_player_url(html).as_deref(),
+            Some("https://vid3rb.com/player?id=episode-1")
+        );
+    }
+
+    #[test]
+    fn ignores_markup_without_a_player_url() {
+        assert!(super::extract_episode_player_url("<html></html>").is_none());
+    }
+}
+

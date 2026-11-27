@@ -6,6 +6,8 @@ import {
   Anime,
   Card,
   Episode,
+  episodeThumbnail,
+  episodeThumbnails,
   Home,
   Progress,
   anime as fetchAnime,
@@ -28,6 +30,8 @@ const episodeNumber = (url: string) => Number(url.split("/").pop() || 0);
 /** "الحلقة 1071 - قمة لوفي" reads better as just "قمة لوفي" next to the episode label. */
 const episodeTitle = (name: string, number: number) =>
   name.replace(new RegExp(`^الحلقة\\s*${number}\\s*[-–—:]?\\s*`), "").trim();
+
+const EPISODES_PER_PAGE = 24;
 
 export default function App() {
   const [view, setView] = useState<View>({ kind: "home" });
@@ -135,7 +139,7 @@ function AnimeSkeleton() {
       <section className="episodes">
         <div className="section-head"><span className="skeleton-heading" /></div>
         <div className="ep-grid">
-          {Array.from({ length: 8 }, (_, index) => <div className="episode-skeleton" key={index}><i /><span /></div>)}
+          {Array.from({ length: 8 }, (_, index) => <div className="episode-grid-skeleton" key={index} />)}
         </div>
       </section>
     </div>
@@ -423,17 +427,76 @@ function BrowseView({
 function AnimeView({ url, play }: { url: string; play: (number: number) => void }) {
   const [data, setData] = useState<Anime | null>(null);
   const [error, setError] = useState("");
+  const [episodeQuery, setEpisodeQuery] = useState("");
+  const [episodePage, setEpisodePage] = useState(1);
+  const [episodeImages, setEpisodeImages] = useState<Record<string, string>>({});
+  const requestedEpisodeImages = useRef(new Set<string>());
 
   useEffect(() => {
+    let live = true;
+    setData(null);
+    setError("");
+    setEpisodeQuery("");
+    setEpisodePage(1);
+    setEpisodeImages({});
+    requestedEpisodeImages.current.clear();
     fetchAnime(url)
-      .then(setData)
-      .catch((reason) => setError(String(reason)));
+      .then((result) => live && setData(result))
+      .catch((reason) => live && setError(String(reason)));
+    return () => {
+      live = false;
+    };
   }, [url]);
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
+  const normalizedQuery = episodeQuery.trim().toLocaleLowerCase();
+  const filteredEpisodes = useMemo(() => {
+    const episodes = data?.episodes ?? [];
+    return normalizedQuery
+      ? episodes.filter((item) =>
+          `${item.number} episode ${item.number} الحلقة ${item.number} ${item.name}`
+            .toLocaleLowerCase()
+            .includes(normalizedQuery)
+        )
+      : episodes;
+  }, [data, normalizedQuery]);
+  const pageCount = Math.max(1, Math.ceil(filteredEpisodes.length / EPISODES_PER_PAGE));
+  const activePage = Math.min(episodePage, pageCount);
+  const startIndex = (activePage - 1) * EPISODES_PER_PAGE;
+  const visibleEpisodes = useMemo(
+    () => filteredEpisodes.slice(startIndex, startIndex + EPISODES_PER_PAGE),
+    [filteredEpisodes, startIndex]
+  );
+  const firstVisible = filteredEpisodes.length ? startIndex + 1 : 0;
+  const lastVisible = Math.min(startIndex + EPISODES_PER_PAGE, filteredEpisodes.length);
 
-  if (error) return <ErrorState message={error} />;
-  if (!data) return <AnimeSkeleton />;
+  useEffect(() => {
+    if (!data || data.url !== url) return;
+
+    const pending = visibleEpisodes.filter(
+      (item) => !episodeImages[item.url] && !requestedEpisodeImages.current.has(item.url)
+    );
+    if (!pending.length) return;
+
+    pending.forEach((item) => requestedEpisodeImages.current.add(item.url));
+    episodeThumbnails(pending.map((item) => item.url))
+      .then((results) => {
+        setEpisodeImages((current) => {
+          const next = { ...current };
+          for (const result of results) {
+            if (result.image) next[result.url] = result.image;
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        pending.forEach((item) => requestedEpisodeImages.current.delete(item.url));
+      });
+  }, [data, url, visibleEpisodes, episodeImages]);
+
+  if (!data || data.url !== url) {
+    return error ? <ErrorState message={error} /> : <AnimeSkeleton />;
+  }
 
   const first = data.episodes[0]?.number ?? 1;
 
@@ -462,22 +525,72 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
       </section>
 
       <section className="episodes">
-        <div className="section-head">
-          <h2>Episodes</h2>
-          <span className="count">{data.episodes.length}</span>
-        </div>
-        <div className="ep-grid">
-          {data.episodes.map((item) => (
-            <EpisodeCard
-              key={item.number}
-              image={data.image}
-              item={item}
-              current={false}
-              progress={seen.get(item.url)}
-              onPlay={play}
+        <div className="episodes-toolbar">
+          <div className="section-head">
+            <h2>Episodes</h2>
+            <span className="count">{data.episodes.length}</span>
+          </div>
+          <label className="episode-search">
+            <input
+              type="search"
+              value={episodeQuery}
+              onChange={(event) => {
+                setEpisodeQuery(event.currentTarget.value);
+                setEpisodePage(1);
+              }}
+              placeholder="Search by episode number or title…"
+              aria-label="Search episodes by number or title"
             />
-          ))}
+          </label>
         </div>
+
+        {visibleEpisodes.length ? (
+          <div className="ep-grid">
+            {visibleEpisodes.map((item) => (
+              <EpisodeCard
+                key={item.number}
+                image={episodeImages[item.url] ?? ""}
+                item={item}
+                current={false}
+                progress={seen.get(item.url)}
+                onPlay={play}
+                layout="grid"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact">
+            <h2>No episodes found</h2>
+            <p>Try another episode number or title.</p>
+          </div>
+        )}
+
+        {filteredEpisodes.length > EPISODES_PER_PAGE && (
+          <nav className="episode-pagination" aria-label="Episode pages">
+            <button
+              className="ghost episode-page-arrow is-previous"
+              type="button"
+              aria-label="Previous episodes"
+              disabled={activePage <= 1}
+              onClick={() => setEpisodePage((page) => Math.max(1, page - 1))}
+            >
+              <Icon name="arrowRight" size={18} />
+            </button>
+            <span aria-live="polite">
+              Showing {firstVisible}–{lastVisible} of {filteredEpisodes.length} episodes
+              <span className="episode-page-number"> · Page {activePage} of {pageCount}</span>
+            </span>
+            <button
+              className="ghost episode-page-arrow"
+              type="button"
+              aria-label="Next episodes"
+              disabled={activePage >= pageCount}
+              onClick={() => setEpisodePage((page) => Math.min(pageCount, page + 1))}
+            >
+              <Icon name="arrowRight" size={18} />
+            </button>
+          </nav>
+        )}
       </section>
     </div>
   );
@@ -496,20 +609,25 @@ function WatchView({
 }) {
   const [data, setData] = useState<Anime | null>(null);
   const [error, setError] = useState("");
-  const side = useRef<HTMLDivElement>(null);
+  const [side, setSide] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    let live = true;
+    setData(null);
+    setError("");
     fetchAnime(url)
-      .then(setData)
-      .catch((reason) => setError(String(reason)));
+      .then((result) => live && setData(result))
+      .catch((reason) => live && setError(String(reason)));
+    return () => {
+      live = false;
+    };
   }, [url]);
 
   // Keep the active episode visible in the sidebar without scrolling the page.
   useEffect(() => {
-    const box = side.current;
-    const card = box?.querySelector<HTMLElement>(".is-current");
-    if (box && card) box.scrollTop = card.offsetTop - box.clientHeight / 2 + card.clientHeight / 2;
-  }, [number, data]);
+    const card = side?.querySelector<HTMLElement>(".is-current");
+    if (side && card) side.scrollTop = card.offsetTop - side.clientHeight / 2 + card.clientHeight / 2;
+  }, [number, data, side]);
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
@@ -559,15 +677,17 @@ function WatchView({
             <h2>Episodes</h2>
             <span className="count">{data.episodes.length}</span>
           </div>
-          <div className="side-list" ref={side}>
+          <div className="side-list" ref={setSide}>
             {data.episodes.map((item) => (
               <EpisodeCard
                 key={item.number}
-                image={data.image}
+                image=""
                 item={item}
                 current={item.number === current.number}
                 progress={seen.get(item.url)}
                 onPlay={open}
+                layout="sidebar"
+                thumbnailRoot={side}
               />
             ))}
           </div>
@@ -577,31 +697,107 @@ function WatchView({
   );
 }
 
+function EpisodeArtwork({
+  src,
+  episodeUrl,
+  root,
+}: {
+  src?: string;
+  episodeUrl?: string;
+  root?: Element | null;
+}) {
+  const target = useRef<HTMLSpanElement>(null);
+  const [loaded, setLoaded] = useState("");
+  const [failed, setFailed] = useState(false);
+  const image = src || loaded;
+
+  useEffect(() => {
+    setLoaded("");
+    setFailed(false);
+  }, [src, episodeUrl]);
+
+  useEffect(() => {
+    if (src || !episodeUrl) return;
+    let live = true;
+    const load = () => {
+      episodeThumbnail(episodeUrl)
+        .then((result) => live && setLoaded(result))
+        .catch(() => {});
+    };
+
+    const node = target.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      load();
+      return () => {
+        live = false;
+      };
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          load();
+        }
+      },
+      { root: root ?? null, rootMargin: "180px 0px" }
+    );
+    observer.observe(node);
+
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
+  }, [src, episodeUrl, root]);
+
+  if (!image || failed) {
+    return <span ref={target} className="image-placeholder" aria-hidden="true" />;
+  }
+
+  return (
+    <img
+      src={image}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function EpisodeCard({
   image,
   item,
   current,
   progress,
   onPlay,
+  layout = "list",
+  thumbnailRoot,
 }: {
   image: string;
   item: Episode;
   current: boolean;
   progress?: Progress;
   onPlay: (number: number) => void;
+  layout?: "grid" | "list" | "sidebar";
+  thumbnailRoot?: Element | null;
 }) {
   const title = episodeTitle(item.name, item.number);
   const percent = progress?.duration ? Math.min(100, (progress.time / progress.duration) * 100) : 0;
   const watched = percent >= 92;
   return (
     <button
-      className={`ep-card${current ? " is-current" : ""}`}
+      className={`ep-card${current ? " is-current" : ""}${layout === "grid" ? " is-grid" : ""}${layout === "sidebar" ? " is-sidebar" : ""}`}
       type="button"
       onClick={() => onPlay(item.number)}
-      title={item.name}
+      title={layout === "list" ? item.name : undefined}
     >
       <span className="ep-thumb">
-        <Img src={image} />
+        {layout === "grid"
+          ? <EpisodeArtwork src={image} />
+          : layout === "sidebar"
+            ? <EpisodeArtwork episodeUrl={item.url} root={thumbnailRoot} />
+            : <Img src={image} />}
         {percent > 0 && (
           <span className="ep-bar">
             <i style={{ width: `${percent}%` }} />

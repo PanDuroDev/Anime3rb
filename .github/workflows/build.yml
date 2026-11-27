@@ -1,6 +1,6 @@
 name: Build Anime3rb
 
-run-name: "Anime3rb build | ${{ github.ref_name }}"
+run-name: "Anime3rb build | ${{ github.head_ref || github.ref_name }}"
 
 on:
   push:
@@ -14,14 +14,21 @@ on:
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
       - "src-tauri/tauri.conf.json"
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: anime3rb-build-${{ github.ref }}
-  cancel-in-progress: false
+  group: anime3rb-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
