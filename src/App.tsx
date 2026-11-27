@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Player, { Icon } from "./components/Player";
+import Player from "./components/Player";
+import { Icon } from "./components/Icon";
 import { Img } from "./components/Img";
 import {
   Anime,
@@ -53,7 +54,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <button className="brand" type="button" onClick={() => go({ kind: "home" })}>
-          <span className="brand-dot">▶</span> Anime<b>3rb</b>
+          <span className="brand-dot"><Icon name="play" size={15} /></span> Anime<b>3rb</b>
         </button>
         <form className="searchbox" onSubmit={submit}>
           <input
@@ -69,6 +70,7 @@ export default function App() {
         <nav className="topnav">
           <button
             className={`nav-link${view.kind === "home" ? " is-active" : ""}`}
+            aria-current={view.kind === "home" ? "page" : undefined}
             type="button"
             onClick={() => go({ kind: "home" })}
           >
@@ -76,6 +78,7 @@ export default function App() {
           </button>
           <button
             className={`nav-link${view.kind === "browse" ? " is-active" : ""}`}
+            aria-current={view.kind === "browse" ? "page" : undefined}
             type="button"
             onClick={() => go({ kind: "browse", page: 1 })}
           >
@@ -104,6 +107,84 @@ export default function App() {
           />
         )}
       </main>
+    </div>
+  );
+}
+
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="empty-state state-error" role="alert">
+      <h2>Unable to load this content</h2>
+      <p>{message}</p>
+    </div>
+  );
+}
+
+function AnimeSkeleton() {
+  return (
+    <div className="anime-page" role="status" aria-label="Loading anime details">
+      <section className="anime-head">
+        <span className="skeleton-detail-poster" />
+        <div className="anime-info">
+          <span className="skeleton-heading wide" />
+          <span className="skeleton-meta" />
+          <span className="skeleton-copy" />
+          <span className="skeleton-action" />
+        </div>
+      </section>
+      <section className="episodes">
+        <div className="section-head"><span className="skeleton-heading" /></div>
+        <div className="ep-grid">
+          {Array.from({ length: 8 }, (_, index) => <div className="episode-skeleton" key={index}><i /><span /></div>)}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WatchSkeleton() {
+  return (
+    <div className="watch-page" role="status" aria-label="Loading episode">
+      <div className="watch-bar"><span className="skeleton-line watch-back-skeleton" /><span className="skeleton-heading" /></div>
+      <div className="watch-layout">
+        <div className="watch-player-skeleton" />
+        <aside className="watch-side">
+          <div className="section-head"><span className="skeleton-heading" /></div>
+          <div className="side-list">
+            {Array.from({ length: 7 }, (_, index) => <div className="episode-skeleton" key={index}><i /><span /></div>)}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="card-skeleton" aria-hidden="true">
+      <span className="skeleton-poster" />
+      <span className="skeleton-line" />
+    </div>
+  );
+}
+
+function CardSkeletonGrid({ count }: { count: number }) {
+  return (
+    <div className="grid skeleton-grid" aria-hidden="true">
+      {Array.from({ length: count }, (_, index) => <SkeletonCard key={index} />)}
+    </div>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="home-skeleton" role="status" aria-label="Loading home page">
+      {[0, 1, 2].map((row) => (
+        <section className="rail" key={row} aria-hidden="true">
+          <div className="section-head"><span className="skeleton-heading" /></div>
+          <div className="skeleton-row">{Array.from({ length: 7 }, (_, index) => <SkeletonCard key={index} />)}</div>
+        </section>
+      ))}
     </div>
   );
 }
@@ -247,8 +328,8 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
       .catch((reason) => setError(String(reason)));
   }, []);
 
-  if (error) return <p className="notice">{error}</p>;
-  if (!data) return <p className="notice">Loading…</p>;
+  if (error) return <ErrorState message={error} />;
+  if (!data) return <HomeSkeleton />;
 
   return (
     <>
@@ -278,9 +359,9 @@ function SearchView({ query, open }: { query: string; open: (url: string) => voi
       .catch((reason) => setError(String(reason)));
   }, [query]);
 
-  if (error) return <p className="notice">{error}</p>;
-  if (!items) return <p className="notice">Searching…</p>;
-  if (!items.length) return <p className="notice">No results for “{query}”</p>;
+  if (error) return <ErrorState message={error} />;
+  if (!items) return <section className="results"><div className="section-head"><h2>Results for “{query}”</h2></div><CardSkeletonGrid count={10} /></section>;
+  if (!items.length) return <div className="empty-state"><h2>No results found</h2><p>Try another title or check the spelling.</p></div>;
 
   return (
     <section className="results">
@@ -312,7 +393,7 @@ function BrowseView({
       .catch((reason) => setError(String(reason)));
   }, [page]);
 
-  if (error) return <p className="notice">{error}</p>;
+  if (error) return <ErrorState message={error} />;
 
   return (
     <section className="results">
@@ -321,11 +402,11 @@ function BrowseView({
         <span className="count">Page {page}</span>
       </div>
       {!items ? (
-        <p className="notice">Loading…</p>
+        <CardSkeletonGrid count={12} />
       ) : items.length ? (
         <CardGrid items={items} open={open} />
       ) : (
-        <p className="notice">No more titles.</p>
+        <div className="empty-state compact"><h2>No more titles</h2><p>There are no additional results on this page.</p></div>
       )}
       <div className="pager">
         <button className="ghost" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
@@ -351,8 +432,8 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data]);
 
-  if (error) return <p className="notice">{error}</p>;
-  if (!data) return <p className="notice">Loading…</p>;
+  if (error) return <ErrorState message={error} />;
+  if (!data) return <AnimeSkeleton />;
 
   const first = data.episodes[0]?.number ?? 1;
 
@@ -432,8 +513,8 @@ function WatchView({
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
-  if (error) return <p className="notice">{error}</p>;
-  if (!data) return <p className="notice">Loading…</p>;
+  if (error) return <ErrorState message={error} />;
+  if (!data) return <WatchSkeleton />;
 
   const index = data.episodes.findIndex((item) => item.number === number);
   const current = data.episodes[index];

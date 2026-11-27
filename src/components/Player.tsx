@@ -11,21 +11,7 @@ import {
   saveProgress,
   skips as fetchSkips,
 } from "../lib/api";
-import { iconPaths } from "../lib/icons";
-
-export function Icon({ name, size = 20 }: { name: string; size?: number }) {
-  const glyph = iconPaths[name];
-  if (!glyph) return null;
-  return (
-    <svg
-      viewBox={glyph.viewBox}
-      width={size}
-      height={size}
-      aria-hidden="true"
-      dangerouslySetInnerHTML={{ __html: glyph.body }}
-    />
-  );
-}
+import { Icon } from "./Icon";
 
 type Props = {
   url: string;
