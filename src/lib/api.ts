@@ -15,43 +15,105 @@ export type Anime = {
 export type Source = { label: string; res: string; premium: boolean; src: string };
 export type EpisodeData = { sources: Source[]; poster: string; thumbs: string; thumbnail_page: string };
 export type ThumbnailData = { poster: string; thumbs: string };
-export type EpisodeThumbnail = { url: string; image: string };
 export type Skips = { ranges: { start: number; end: number }[]; content_end: number };
 
-export const home = () => invoke<Home>("home");
-export const search = (query: string) => invoke<Card[]>("search", { query });
-export const browse = (page: number) => invoke<Card[]>("browse", { page });
-export const anime = (url: string) => invoke<Anime>("anime", { url });
-export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
-export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
-export const episodeThumbnails = (urls: string[]) =>
-  invoke<EpisodeThumbnail[]>("episode_thumbnails", { urls });
+type RequestCacheEntry = { value: unknown; expiresAt: number };
+const requestCache = new Map<string, RequestCacheEntry>();
+const requestInflight = new Map<string, Promise<unknown>>();
 
-const episodeThumbnailCache = new Map<string, string>();
-const episodeThumbnailRequests = new Map<string, Promise<string>>();
+function cachedRequest<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
+  const cached = requestCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.value as T);
+  }
+  if (cached) requestCache.delete(key);
 
-export function episodeThumbnail(url: string): Promise<string> {
-  const cached = episodeThumbnailCache.get(url);
-  if (cached) return Promise.resolve(cached);
+  const pending = requestInflight.get(key);
+  if (pending) return pending as Promise<T>;
 
-  const pending = episodeThumbnailRequests.get(url);
+  const request = load()
+    .then((value) => {
+      if (requestCache.size >= 120) {
+        const oldest = requestCache.keys().next().value;
+        if (oldest) requestCache.delete(oldest);
+      }
+      requestCache.set(key, { value, expiresAt: Date.now() + ttl });
+      return value;
+    })
+    .finally(() => requestInflight.delete(key));
+
+  requestInflight.set(key, request);
+  return request;
+}
+
+export const home = () => cachedRequest("home", 5 * 60 * 1000, () => invoke<Home>("home"));
+export const search = (query: string) =>
+  cachedRequest(`search:${query.trim().toLocaleLowerCase()}`, 5 * 60 * 1000, () =>
+    invoke<Card[]>("search", { query })
+  );
+export const browse = (page: number) =>
+  cachedRequest(`browse:${page}`, 15 * 60 * 1000, () => invoke<Card[]>("browse", { page }));
+const animeCache = new Map<string, { data: Anime; expiresAt: number }>();
+const animeRequests = new Map<string, Promise<Anime>>();
+const ANIME_CACHE_TTL = 15 * 60 * 1000;
+
+export function anime(url: string): Promise<Anime> {
+  const cached = animeCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.data);
+  }
+  if (cached) animeCache.delete(url);
+
+  const pending = animeRequests.get(url);
   if (pending) return pending;
 
-  const request = episodeThumbnails([url])
-    .then((results) => {
-      const image = results.find((item) => item.url === url)?.image ?? "";
-      if (image) {
-        if (episodeThumbnailCache.size >= 240) {
-          const oldest = episodeThumbnailCache.keys().next().value;
-          if (oldest) episodeThumbnailCache.delete(oldest);
-        }
-        episodeThumbnailCache.set(url, image);
+  const request = invoke<Anime>("anime", { url })
+    .then((data) => {
+      if (animeCache.size >= 40) {
+        const oldest = animeCache.keys().next().value;
+        if (oldest) animeCache.delete(oldest);
       }
-      return image;
+      animeCache.set(url, { data, expiresAt: Date.now() + ANIME_CACHE_TTL });
+      return data;
     })
-    .finally(() => episodeThumbnailRequests.delete(url));
+    .finally(() => animeRequests.delete(url));
 
-  episodeThumbnailRequests.set(url, request);
+  animeRequests.set(url, request);
+  return request;
+}
+export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
+export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
+const episodeArtworkCache = new Map<string, string>();
+const episodeArtworkRequests = new Map<string, Promise<string>>();
+
+export function episodeCatalogThumbnail(
+  animeUrl: string,
+  animeName: string,
+  episodeNumber: number
+): Promise<string> {
+  const key = `${animeUrl}#${episodeNumber}`;
+  if (episodeArtworkCache.has(key)) {
+    return Promise.resolve(episodeArtworkCache.get(key) ?? "");
+  }
+
+  const pending = episodeArtworkRequests.get(key);
+  if (pending) return pending;
+
+  const request = invoke<string>("episode_catalog_thumbnail", {
+    animeUrl,
+    animeName,
+    episodeNumber,
+  })
+    .then((image) => {
+      // Cache empty results too, so a missing upstream image does not trigger another lookup
+      // every time the user scrolls away and back.
+      if (episodeArtworkCache.size >= 600) episodeArtworkCache.clear();
+      episodeArtworkCache.set(key, image || "");
+      return image || "";
+    })
+    .finally(() => episodeArtworkRequests.delete(key));
+
+  episodeArtworkRequests.set(key, request);
   return request;
 }
 export const skips = (title: string, episode: number, length: number) =>
