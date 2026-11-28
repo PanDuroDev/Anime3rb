@@ -1110,6 +1110,16 @@ const SOURCE_HOOK: &str = r#"(function () {
   var sourceFound = false;
   var pendingBody = null;
   var visible = __VISIBLE__;
+  var androidRuntime = /Android/i.test(navigator.userAgent || "");
+
+  function loopbackPermission() {
+    if (!navigator.permissions || !navigator.permissions.query) {
+      return Promise.resolve("prompt");
+    }
+    return navigator.permissions.query({ name: "loopback-network" })
+      .then(function (status) { return status.state; })
+      .catch(function () { return "prompt"; });
+  }
 
   function send(text) {
     if (captured || sending || !text) return;
@@ -1138,8 +1148,21 @@ const SOURCE_HOOK: &str = r#"(function () {
     if (sourceFound || status < 200 || status >= 300 || !body) return;
     sourceFound = true;
     pendingBody = body;
-    // WebView2 answers "prompt" for the loopback permission, so send right away and let
-    // the visible retry button appear only if the request itself fails.
+
+    if (androidRuntime) {
+      // Android WebView may gate public-origin requests to 127.0.0.1 behind a
+      // user gesture. Keep hidden capture silent until permission is already granted.
+      loopbackPermission().then(function (permission) {
+        if (permission === "granted") {
+          send(body);
+        } else if (visible) {
+          showStatus(permission);
+        }
+      });
+      return;
+    }
+
+    // Preserve the existing quiet capture path on desktop WebViews.
     send(body);
   }
 
