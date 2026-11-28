@@ -259,29 +259,39 @@ input { font: inherit; }
 
 .rail-scroll::-webkit-scrollbar { display: none; }
 
+.section-head.rail-head,
+.section-head.browse-head { align-items: center; }
+
+.section-head.browse-head .count { margin-inline-start: auto; }
+
+.rail-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
 .rail-arrow {
-  position: absolute;
-  top: 50%;
-  z-index: 2;
   display: grid;
+  flex: 0 0 34px;
   place-items: center;
   width: 34px;
   height: 34px;
-  margin-top: -22px;
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
-  background: rgba(20, 20, 20, 0.9);
+  background: var(--panel);
   color: var(--text);
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  opacity: 1;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
 }
 
-.rail-wrap:hover .rail-arrow { opacity: 1; }
-.rail-arrow:disabled { opacity: 0 !important; pointer-events: none; }
+.rail-arrow:disabled { opacity: 0.28; pointer-events: none; }
 .rail-arrow svg { fill: currentColor; }
-.rail-arrow.start { left: -12px; transform: rotate(180deg); }
-.rail-arrow.end { right: -12px; }
-.rail-arrow:hover { background: var(--accent); border-color: var(--accent); }
+.rail-arrow.start { transform: rotate(180deg); }
+.rail-arrow.end { transform: none; }
+.rail-arrow:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--white); }
 
 .rail-card, .card {
   min-width: 0;
@@ -1600,18 +1610,6 @@ input { font: inherit; }
   .searchbox { grid-column: 1 / -1; max-width: none; order: 3; }
   .topnav { grid-column: 2; grid-row: 1; }
   .rail-item { flex-basis: 128px; width: 128px; }
-  /* Keep shelf controls reachable on touch screens without covering poster artwork. */
-  .rail-arrow {
-    top: -42px;
-    width: 30px;
-    height: 30px;
-    margin-top: 0;
-    background: var(--panel);
-    opacity: 1;
-  }
-  .rail-arrow:disabled { opacity: 0.28 !important; }
-  .rail-arrow.start { left: auto; right: 38px; }
-  .rail-arrow.end { right: 0; }
   .anime-head { grid-template-columns: 110px 1fr; gap: 14px; padding: 14px; }
   .anime-info h1 { font-size: 20px; }
   .episodes-toolbar { align-items: stretch; flex-direction: column; }
