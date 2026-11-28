@@ -882,12 +882,19 @@ input { font: inherit; }
   margin: 22px 0 8px;
 }
 
-.episode-pagination > span {
+.episode-pagination-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
   color: var(--muted);
   font-size: 13px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+.episode-range { white-space: nowrap; }
 
 .episode-page-arrow {
   display: grid;
@@ -900,7 +907,15 @@ input { font: inherit; }
 
 .episode-page-arrow svg { fill: currentColor; }
 .episode-page-arrow.is-previous svg { transform: rotate(180deg); }
-.episode-page-number { white-space: nowrap; }
+.episode-page-number {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
 
 /* ---------- Watch page ---------- */
 
