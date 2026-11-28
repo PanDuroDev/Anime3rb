@@ -93,6 +93,18 @@ release. Leave `version` empty to build without releasing.
 The same run can be started from a GitHub MCP client such as ChatGPT with the GitHub connector,
 using the `actions_run_trigger` tool with `workflow_id: build.yml` and those inputs.
 
+## Updates
+
+Desktop builds read `latest.json` from the newest GitHub Release, and can download and install the
+NSIS update in place, then relaunch. Android has no in-place updater: the app compares the latest
+release tag with its own version and opens the new APK for the system installer.
+
+Releases are signed with the Tauri updater key. The public key is in `src-tauri/tauri.conf.json`;
+the private key and password are the `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. A local `npm run tauri build` needs the same
+two variables, otherwise bundling fails. `scripts/latest-json.mjs` builds the manifest the release
+job attaches.
+
 ## Notes
 
 - Personal, unofficial project. Not affiliated with Anime3rb or HackerTube.

@@ -5,6 +5,15 @@ mod skips;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|_app| {
+            #[cfg(desktop)]
+            {
+                _app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                _app.handle().plugin(tauri_plugin_process::init())?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             scrape::home,
             scrape::search,
