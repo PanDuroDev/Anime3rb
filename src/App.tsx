@@ -39,6 +39,14 @@ const episodeTitle = (name: string, number: number) =>
 
 const EPISODES_PER_PAGE = 24;
 
+const FILLER_LABELS: Record<import("./lib/api").FillerStatus, string> = {
+  filler: "Filler",
+  mixed: "Mixed",
+  "anime-canon": "Anime Canon",
+  canon: "Manga Canon",
+  disputed: "Disputed",
+};
+
 export default function App() {
   const [view, setView] = useState<View>({ kind: "home" });
   const [query, setQuery] = useState("");
@@ -123,6 +131,10 @@ export default function App() {
         <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
         {" · "}
         <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
+        {" · "}
+        <a href="https://anifillerpedia.wiki/docs/guide" target="_blank" rel="noreferrer">AniFillerPedia</a>
+        {" · "}
+        <a href="https://fillerlists.com/data" target="_blank" rel="noreferrer">FillerLists</a>
       </footer>
       <UpdateBanner />
     </div>
@@ -899,6 +911,15 @@ function EpisodeCard({
         <span className="ep-num">
           Episode {item.number}
           {watched && <span className="ep-done">Watched</span>}
+          {item.filler && (
+            <span
+              className={`filler-tag is-${item.filler.status}`}
+              title={`Source: ${item.filler.sources.join(", ")}${item.filler.sourceCount ? ` · ${item.filler.sourceCount} references` : ""}${item.filler.note ? `\n${item.filler.note}` : ""}`}
+              aria-label={`Filler classification: ${FILLER_LABELS[item.filler.status]}`}
+            >
+              {FILLER_LABELS[item.filler.status]}
+            </span>
+          )}
         </span>
         {title && <span className="ep-name">{title}</span>}
       </span>
