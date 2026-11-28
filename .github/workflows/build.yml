@@ -104,6 +104,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Derive updater public key from signing secret
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo run --quiet --manifest-path scripts/updater-key-inspector/Cargo.toml
+
       - name: Test updater signature verifier
         run: node scripts/test-updater-signatures.mjs
 
