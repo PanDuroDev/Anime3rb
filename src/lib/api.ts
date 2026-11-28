@@ -88,6 +88,41 @@ export function anime(url: string): Promise<Anime> {
   animeRequests.set(url, request);
   return request;
 }
+
+const fillerCache = new Map<string, { data: Record<number, FillerInfo>; expiresAt: number }>();
+const fillerRequests = new Map<string, Promise<Record<number, FillerInfo>>>();
+const FILLER_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+export function fillerClassifications(
+  animeUrl: string,
+  animeName: string
+): Promise<Record<number, FillerInfo>> {
+  const cached = fillerCache.get(animeUrl);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Promise.resolve(cached.data);
+  }
+  if (cached) fillerCache.delete(animeUrl);
+
+  const pending = fillerRequests.get(animeUrl);
+  if (pending) return pending;
+
+  const request = invoke<Record<number, FillerInfo>>("filler_classifications", {
+    animeUrl,
+    animeName,
+  })
+    .then((data) => {
+      if (fillerCache.size >= 40) {
+        const oldest = fillerCache.keys().next().value;
+        if (oldest) fillerCache.delete(oldest);
+      }
+      fillerCache.set(animeUrl, { data, expiresAt: Date.now() + FILLER_CACHE_TTL });
+      return data;
+    })
+    .finally(() => fillerRequests.delete(animeUrl));
+
+  fillerRequests.set(animeUrl, request);
+  return request;
+}
 export const episode = (url: string) => invoke<EpisodeData>("episode", { url });
 export const thumbnailInfo = (url: string) => invoke<ThumbnailData>("thumbnail_info", { url });
 const episodeArtworkCache = new Map<string, string>();
