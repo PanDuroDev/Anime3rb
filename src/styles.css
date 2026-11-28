@@ -1786,7 +1786,7 @@ input { font: inherit; }
   line-height: 1.35;
 }
 
-.update-error {
+.update-text .update-error {
   color: #ff8a8a;
   overflow-wrap: anywhere;
 }
