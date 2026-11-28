@@ -38,7 +38,11 @@ writeFileSync(
       notes,
       pub_date: new Date().toISOString(),
       platforms: {
-        // NSIS is the generic Windows target; MSI installs receive their matching MSI package.
+        // Prefer installer-specific targets. Keep the generic target as a compatibility fallback.
+        "windows-x86_64-nsis": {
+          signature: readFileSync(nsisSignature, "utf8").trim(),
+          url: `${base}/${basename(nsisInstaller)}`,
+        },
         "windows-x86_64": {
           signature: readFileSync(nsisSignature, "utf8").trim(),
           url: `${base}/${basename(nsisInstaller)}`,
