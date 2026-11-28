@@ -6,7 +6,7 @@ const { publicKey: generatedPublicKey, privateKey } = generateKeyPairSync("ed255
 const publicKeyDer = generatedPublicKey.export({ format: "der", type: "spki" });
 const keyId = randomBytes(8);
 const publicKeyBytes = Buffer.concat([
-  Buffer.from([0x45, 0x44]),
+  Buffer.from([0x45, 0x64]),
   keyId,
   publicKeyDer.subarray(-32),
 ]);
@@ -23,7 +23,7 @@ const trustedComment = "timestamp:1795877613\tfile:updater-test\tversion:" + ver
 const digest = createHash("blake2b512").update(payload).digest();
 const detachedSignature = sign(null, digest, privateKey);
 const signatureBytes = Buffer.concat([
-  Buffer.from([0x45, 0x64]),
+  Buffer.from([0x45, 0x44]),
   keyId,
   detachedSignature,
 ]);
