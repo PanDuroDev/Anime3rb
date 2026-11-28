@@ -7,11 +7,17 @@ const RELEASE_API = "https://api.github.com/repos/PanDuroDev/Anime3rb/releases/l
 const ANDROID = /Android/i.test(navigator.userAgent);
 const WINDOWS = /Windows/i.test(navigator.userAgent);
 
+export type DownloadProgress = {
+  downloadedBytes: number;
+  totalBytes: number | null;
+  finished: boolean;
+};
+
 export type PendingUpdate = {
   version: string;
   /** True when the update is an APK that installs through the system browser. */
   external?: boolean;
-  install: (onProgress: (fraction: number | null) => void) => Promise<void>;
+  install: (onProgress: (progress: DownloadProgress) => void) => Promise<void>;
 };
 
 type Release = {
@@ -27,17 +33,27 @@ export async function findUpdate(): Promise<PendingUpdate | null> {
   return {
     version: update.version,
     install: async (onProgress) => {
-      let total = 0;
-      let done = 0;
+      let totalBytes: number | null = null;
+      let downloadedBytes = 0;
       await update.downloadAndInstall((event) => {
         if (event.event === "Started") {
-          total = event.data.contentLength ?? 0;
-          onProgress(0);
+          const contentLength = event.data.contentLength;
+          totalBytes =
+            typeof contentLength === "number" && Number.isFinite(contentLength) && contentLength > 0
+              ? contentLength
+              : null;
+          downloadedBytes = 0;
+          onProgress({ downloadedBytes, totalBytes, finished: false });
         } else if (event.event === "Progress") {
-          done += event.data.chunkLength;
-          onProgress(total ? done / total : null);
+          downloadedBytes += Math.max(0, event.data.chunkLength);
+          onProgress({ downloadedBytes, totalBytes, finished: false });
         } else {
-          onProgress(1);
+          const finalTotal = totalBytes ?? downloadedBytes;
+          onProgress({
+            downloadedBytes: Math.max(downloadedBytes, finalTotal),
+            totalBytes: finalTotal,
+            finished: true,
+          });
         }
       });
       // Windows exits the app and the installer restarts it; other platforms need a manual relaunch.
