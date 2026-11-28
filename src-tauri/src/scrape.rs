@@ -35,8 +35,6 @@ pub struct Episode {
     pub number: u32,
     pub name: String,
     pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filler: Option<FillerInfo>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -1349,7 +1347,6 @@ pub async fn anime(url: String) -> Result<Anime, String> {
         .find(|node| node.get("@type").and_then(Value::as_str) == Some("TVSeries"))
         .ok_or_else(|| "No series data on this page".to_string())?;
 
-    let anime_name = s(series.get("name"));
     let mut episodes: Vec<Episode> = series
         .get("episode")
         .and_then(Value::as_array)
@@ -1360,21 +1357,14 @@ pub async fn anime(url: String) -> Result<Anime, String> {
                     number: s(item.get("episodeNumber")).parse().unwrap_or_default(),
                     name: s(item.get("name")),
                     url: s(item.get("url")),
-                    filler: None,
                 })
                 .collect()
         })
         .unwrap_or_default();
     episodes.sort_by_key(|episode| episode.number);
 
-    // Filler metadata is best-effort: a provider outage must never block anime details or playback.
-    let filler = anime_filler_classifications(&url, &anime_name).await;
-    for episode in &mut episodes {
-        episode.filler = filler.get(&episode.number).cloned();
-    }
-
     Ok(Anime {
-        name: anime_name,
+        name: s(series.get("name")),
         url: url.clone(),
         image: s(series.get("image")),
         description: s(series.get("description")),
@@ -1387,6 +1377,13 @@ pub async fn anime(url: String) -> Result<Anime, String> {
     })
 }
 
+#[tauri::command]
+pub async fn filler_classifications(
+    anime_url: String,
+    anime_name: String,
+) -> Result<HashMap<u32, FillerInfo>, String> {
+    Ok(anime_filler_classifications(&anime_url, &anime_name).await)
+}
 fn extract_episode_player_url(html: &str) -> Option<String> {
     let player = regex::Regex::new(r#""video_url":"(https:[^"]+)""#).ok()?;
     player
