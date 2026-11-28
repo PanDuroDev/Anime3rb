@@ -96,6 +96,8 @@ input { font: inherit; }
   backdrop-filter: blur(12px);
 }
 
+.topbar.is-watch { grid-template-columns: 1fr auto; }
+
 .brand {
   display: flex;
   align-items: center;
@@ -1572,8 +1574,8 @@ input { font: inherit; }
   .episode-search { flex-basis: auto; width: 100%; }
   .desc { -webkit-line-clamp: 3; }
   .watch-bar { flex-wrap: wrap; gap: 10px; }
-  .watch-title { order: -1; flex-basis: 100%; }
-  .watch-nav { margin-inline-start: 0; }
+  .watch-title { order: 1; flex-basis: 100%; }
+  .watch-nav { margin-inline-start: auto; }
   .watch-nav .ghost { padding: 7px 12px; font-size: 13px; }
   .watch-layout { grid-template-columns: 1fr; }
   .watch-side { position: static; max-height: 420px; }

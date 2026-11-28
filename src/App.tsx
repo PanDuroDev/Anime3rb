@@ -71,21 +71,23 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className={`topbar${view.kind === "watch" ? " is-watch" : ""}`}>
         <button className="brand" type="button" onClick={() => go({ kind: "home" })}>
           <span className="brand-dot"><Icon name="play" size={15} /></span> Anime<b>3rb</b>
         </button>
-        <form className="searchbox" onSubmit={submit}>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search anime…"
-            aria-label="Search"
-          />
-          <button type="submit" aria-label="Search">
-            <Icon name="arrowRight" size={18} />
-          </button>
-        </form>
+        {view.kind !== "watch" && (
+          <form className="searchbox" onSubmit={submit}>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search anime…"
+              aria-label="Search"
+            />
+            <button type="submit" aria-label="Search">
+              <Icon name="arrowRight" size={18} />
+            </button>
+          </form>
+        )}
         <nav className="topnav">
           <button
             className={`nav-link${view.kind === "home" ? " is-active" : ""}`}
