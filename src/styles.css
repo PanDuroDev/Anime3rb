@@ -1786,7 +1786,10 @@ input { font: inherit; }
   line-height: 1.35;
 }
 
-.update-error { color: #ff8a8a; }
+.update-error {
+  color: #ff8a8a;
+  overflow-wrap: anywhere;
+}
 
 .update-install,
 .update-later {
