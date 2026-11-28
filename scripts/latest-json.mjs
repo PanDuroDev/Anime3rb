@@ -13,11 +13,19 @@ const walk = (path) =>
   });
 
 const files = walk(dir);
-const installer = files.find((file) => file.endsWith(".exe"));
-const signature = files.find((file) => file.endsWith(".exe.sig"));
+const findFile = (suffix) => files.find((file) => file.toLowerCase().endsWith(suffix));
+const nsisInstaller = findFile(".exe");
+const msiInstaller = findFile(".msi");
+const siblingSignature = (installer) =>
+  installer && files.find((file) => file.toLowerCase() === `${installer}.sig`.toLowerCase());
+const nsisSignature = siblingSignature(nsisInstaller);
+const msiSignature = siblingSignature(msiInstaller);
 
-if (!version || !installer || !signature) {
-  console.error("latest.json needs VERSION, the NSIS installer, and its .sig", { version, files });
+if (!version || !nsisInstaller || !nsisSignature || !msiInstaller || !msiSignature) {
+  console.error("latest.json needs VERSION plus the NSIS and MSI installers and their .sig files", {
+    version,
+    files,
+  });
   process.exit(1);
 }
 
@@ -30,9 +38,14 @@ writeFileSync(
       notes,
       pub_date: new Date().toISOString(),
       platforms: {
+        // NSIS is the generic Windows target; MSI installs receive their matching MSI package.
         "windows-x86_64": {
-          signature: readFileSync(signature, "utf8").trim(),
-          url: `${base}/${basename(installer)}`,
+          signature: readFileSync(nsisSignature, "utf8").trim(),
+          url: `${base}/${basename(nsisInstaller)}`,
+        },
+        "windows-x86_64-msi": {
+          signature: readFileSync(msiSignature, "utf8").trim(),
+          url: `${base}/${basename(msiInstaller)}`,
         },
       },
     },
@@ -40,4 +53,4 @@ writeFileSync(
     2,
   ),
 );
-console.log(`latest.json -> ${version} (${basename(installer)})`);
+console.log(`latest.json -> ${version} (NSIS: ${basename(nsisInstaller)}, MSI: ${basename(msiInstaller)})`);
