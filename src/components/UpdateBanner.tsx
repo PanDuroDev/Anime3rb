@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { findUpdate, PendingUpdate } from "../lib/update";
+import { DownloadProgress, findUpdate, PendingUpdate } from "../lib/update";
 
 const RECHECK_MS = 6 * 60 * 60 * 1000;
+
+const formatBytes = (bytes: number) =>
+  bytes < 1024
+    ? `${Math.max(0, Math.round(bytes))} B`
+    : bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(1)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 export default function UpdateBanner() {
   const [update, setUpdate] = useState<PendingUpdate | null>(null);
   const [checkError, setCheckError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<number | null>(null);
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [error, setError] = useState("");
+  const [errorVersion, setErrorVersion] = useState<string | null>(null);
   const [hidden, setHidden] = useState<string | null>(null);
 
   const scan = useCallback(async () => {
@@ -52,14 +60,29 @@ export default function UpdateBanner() {
 
   if (!update || hidden === update.version) return null;
 
+  const activeError = errorVersion === update.version ? error : "";
+  const signatureVerificationFailed =
+    /signature verification failed|failed to verify (?:the )?signature|signature (?:is )?(?:invalid|mismatch|does not match)/i.test(
+      activeError,
+    );
+  const percentage = progress?.finished
+    ? 100
+    : progress?.totalBytes && progress.totalBytes > 0
+      ? Math.min(99, Math.floor((progress.downloadedBytes / progress.totalBytes) * 100))
+      : null;
+
   const run = async () => {
     setBusy(true);
     setError("");
+    setErrorVersion(null);
+    setProgress(null);
     try {
       await update.install(setProgress);
       if (update.external) setUpdate(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      setErrorVersion(update.version);
+      setProgress(null);
       setBusy(false);
     }
   };
@@ -69,10 +92,50 @@ export default function UpdateBanner() {
       <div className="update-text">
         <strong>Update {update.version}</strong>
         <span>{update.external ? "Download the new APK to install it." : "A newer version is ready."}</span>
-        {error && <span className="update-error">{error}</span>}
+        {activeError && (
+          <span className="update-error">
+            {signatureVerificationFailed
+              ? "The update signature could not be verified. Installation was blocked for security. Anime3rb checks signatures automatically; no separate signature file is needed."
+              : activeError}
+          </span>
+        )}
       </div>
-      <button className="update-install" type="button" onClick={run} disabled={busy}>
-        {busy ? (progress === null ? "Downloading…" : `${Math.round(progress * 100)}%`) : update.external ? "Download" : "Update now"}
+      {busy && progress && !update.external && (
+        <div className="update-progress">
+          <div
+            className={`update-progress-track${percentage === null ? " is-indeterminate" : ""}`}
+            role="progressbar"
+            aria-label="Update download progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percentage ?? undefined}
+          >
+            <i style={percentage === null ? undefined : { width: `${percentage}%` }} />
+          </div>
+          <span className="update-progress-label">
+            {percentage === null
+              ? `${formatBytes(progress.downloadedBytes)} downloaded`
+              : `${percentage}% · ${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes ?? progress.downloadedBytes)}`}
+          </span>
+        </div>
+      )}
+      <button
+        className="update-install"
+        type="button"
+        onClick={run}
+        disabled={busy || signatureVerificationFailed}
+      >
+        {busy
+          ? percentage === null
+            ? "Downloading…"
+            : `${percentage}%`
+          : signatureVerificationFailed
+            ? "Blocked"
+            : activeError
+              ? "Retry"
+              : update.external
+                ? "Download"
+                : "Update now"}
       </button>
       <button className="update-later" type="button" onClick={() => setHidden(update.version)} disabled={busy}>
         Later
