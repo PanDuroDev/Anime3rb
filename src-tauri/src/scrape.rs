@@ -1114,11 +1114,12 @@ const SOURCE_HOOK: &str = r#"(function () {
 
   function loopbackPermission() {
     if (!navigator.permissions || !navigator.permissions.query) {
-      return Promise.resolve("prompt");
+      return Promise.resolve("unsupported");
     }
     return navigator.permissions.query({ name: "loopback-network" })
       .then(function (status) { return status.state; })
-      .catch(function () { return "prompt"; });
+      // Older WebViews do not know this permission name; there is no LNA gate to wait for.
+      .catch(function () { return "unsupported"; });
   }
 
   function send(text) {
@@ -1158,10 +1159,11 @@ const SOURCE_HOOK: &str = r#"(function () {
     pendingBody = body;
 
     if (androidRuntime) {
-      // Android WebView may gate public-origin requests to 127.0.0.1 behind a
-      // user gesture. Keep hidden capture silent until permission is already granted.
+      // Local Network Access wants the first loopback request to come from a user gesture
+      // when the permission is still "prompt". WebViews without LNA report "unsupported"
+      // and can send immediately, so hidden capture keeps working there.
       loopbackPermission().then(function (permission) {
-        if (permission === "granted") {
+        if (permission === "granted" || permission === "unsupported") {
           send(body);
         } else if (visible) {
           showStatus(permission);
@@ -1268,14 +1270,47 @@ const SOURCE_HOOK: &str = r#"(function () {
 
   // The player writes its source array into a script inside player.ready(), so read it from
   // the rendered HTML; that works even when the request never passes through XHR/fetch.
+  // Pick the largest valid assignment: the page may declare an empty array first.
   var checkInlineSources = function () {
     try {
       var html = document.documentElement.innerHTML;
-      var at = html.indexOf("video_sources = [{");
-      if (at < 0) return;
-      var rest = html.slice(at + "video_sources = ".length);
-      var end = rest.indexOf("];");
-      if (end > -1) sendResponse(200, rest.slice(0, end + 1));
+      var pattern = /\bvideo_sources\s*=\s*\[/g;
+      var best = null;
+      var match;
+      while ((match = pattern.exec(html))) {
+        var start = match.index + match[0].length - 1;
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+        for (var i = start; i < html.length; i++) {
+          var ch = html.charAt(i);
+          if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === "\\") escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+          }
+          if (ch === '"') inString = true;
+          else if (ch === "[") depth++;
+          else if (ch === "]") {
+            depth--;
+            if (depth === 0) {
+              try {
+                var parsed = JSON.parse(html.slice(start, i + 1));
+                if (parsed.length &&
+                    parsed.some(function (item) {
+                      return item && typeof item.src === "string" && item.src;
+                    }) &&
+                    (!best || parsed.length > best.length)) {
+                  best = parsed;
+                }
+              } catch (e) {}
+              break;
+            }
+          }
+        }
+      }
+      if (best) sendResponse(200, JSON.stringify(best));
     } catch (e) {}
   };
   checkInlineSources();
