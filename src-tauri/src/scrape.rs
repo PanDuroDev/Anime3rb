@@ -1395,7 +1395,7 @@ fn parse_video_sources(body: &str) -> Result<Vec<Value>, String> {
 /// Read a populated video_sources assignment from the player HTML without relying on
 /// a WebView. Parse balanced brackets so nested arrays and quoted brackets are safe.
 fn extract_video_sources_from_page(page: &str) -> Option<Vec<Value>> {
-    let assignment = regex::Regex::new(r"\\bvideo_sources\\s*=\\s*\\[").ok()?;
+    let assignment = regex::Regex::new(r"\bvideo_sources\s*=\s*\[").ok()?;
     let bytes = page.as_bytes();
     let mut best: Option<Vec<Value>> = None;
 
@@ -1410,7 +1410,7 @@ fn extract_video_sources_from_page(page: &str) -> Option<Vec<Value>> {
             if in_string {
                 if escaped {
                     escaped = false;
-                } else if byte == b'\\\\' {
+                } else if byte == b'\\' {
                     escaped = true;
                 } else if byte == b'"' {
                     in_string = false;
