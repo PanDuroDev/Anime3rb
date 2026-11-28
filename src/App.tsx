@@ -38,7 +38,7 @@ const normalizeEpisodeNumberQuery = (query: string) =>
 const episodeTitle = (name: string, number: number) =>
   name.replace(new RegExp(`^الحلقة\\s*${number}\\s*[-–—:]?\\s*`), "").trim();
 
-const EPISODES_PER_PAGE = 24;
+const EPISODES_PER_PAGE = 25;
 const WATCH_SIDEBAR_PAGE_SIZE = 24;
 
 const FILLER_LABELS: Record<import("./lib/api").FillerStatus, string> = {
