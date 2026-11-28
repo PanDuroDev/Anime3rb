@@ -1743,7 +1743,6 @@ input { font: inherit; }
   .watch-nav .ghost { padding: 7px 9px; font-size: 12px; }
   .watch-main { min-width: 0; margin-inline: -14px; }
   .watch-main .player { width: 100%; }
-  .watch-nav .ghost { padding: 7px 12px; font-size: 13px; }
   .watch-layout { grid-template-columns: 1fr; }
   .watch-side { position: static; max-height: 420px; }
   .ep-card.is-sidebar::after { -webkit-backdrop-filter: none; backdrop-filter: none; }
