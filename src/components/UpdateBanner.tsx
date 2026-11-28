@@ -4,9 +4,11 @@ import { DownloadProgress, findUpdate, PendingUpdate } from "../lib/update";
 const RECHECK_MS = 6 * 60 * 60 * 1000;
 
 const formatBytes = (bytes: number) =>
-  bytes < 1024 * 1024
-    ? `${Math.round(bytes / 1024)} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  bytes < 1024
+    ? `${Math.max(0, Math.round(bytes))} B`
+    : bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(1)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 export default function UpdateBanner() {
   const [update, setUpdate] = useState<PendingUpdate | null>(null);
@@ -57,13 +59,15 @@ export default function UpdateBanner() {
 
   if (!update || hidden === update.version) return null;
 
-  const signatureVerificationFailed = /signature verification failed/i.test(error);
-  const percentage =
-    progress?.totalBytes && progress.totalBytes > 0
-      ? Math.min(100, Math.round((progress.downloadedBytes / progress.totalBytes) * 100))
-      : progress?.finished
-        ? 100
-        : null;
+  const signatureVerificationFailed =
+    /signature verification failed|failed to verify (?:the )?signature|signature (?:is )?(?:invalid|mismatch|does not match)/i.test(
+      error,
+    );
+  const percentage = progress?.finished
+    ? 100
+    : progress?.totalBytes && progress.totalBytes > 0
+      ? Math.min(99, Math.floor((progress.downloadedBytes / progress.totalBytes) * 100))
+      : null;
 
   const run = async () => {
     setBusy(true);
