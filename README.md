@@ -27,6 +27,7 @@ Every page on Anime3rb embeds its content as schema.org JSON-LD, so nothing is s
 | Anime + episode list | `TVSeries` node with `episode[]` (15-minute in-memory cache) |
 | Home / search / catalogue | Anime3rb, cached for 5 minutes (home/search) or 15 minutes (catalogue pages) |
 | Episode still images | Kitsu → AniZip → Nogitsu; fetched only near the viewport and cached by 20/24-episode range |
+| Filler classification | AniFillerPedia by AniList ID, compared with FillerLists through AniZip's TVDB mapping; best-effort and cached for 24 hours |
 | Series/catalogue posters | Anime3rb image CDN, proxied only when a poster approaches the viewport |
 | Player + video sources | `video_url` on the episode page, then `video_sources` on the player page |
 | Skip times | AniSkip, after mapping the title to MAL through AniList |
@@ -52,6 +53,8 @@ and browse/anime details for 15 minutes.
 Nogitsu's public API is free for non-commercial use with attribution. Episode artwork rights remain
 with their respective source providers and are used only to identify the corresponding episode.
 The app credits Kitsu, AniZip and Nogitsu in its footer.
+
+Episode filler labels are best-effort metadata from [AniFillerPedia](https://anifillerpedia.wiki/docs/guide) and [FillerLists](https://fillerlists.com/data). AniFillerPedia episode records include citations and are licensed CC BY-NC-SA 4.0; FillerLists data is licensed CC BY-SA 4.0. The app displays a disagreement as **Disputed** and leaves episodes without a source record unclassified. These labels are informational fan references, not definitive canon rulings.
 
 ## Development
 
