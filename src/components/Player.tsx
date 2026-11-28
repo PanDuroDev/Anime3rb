@@ -705,7 +705,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           </span>
           <span className="grow" />
           <button
-            className="btn"
+            className="btn theater-toggle"
             type="button"
             onClick={() => setTheater(!theater)}
             aria-label="Theater mode"
