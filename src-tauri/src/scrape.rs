@@ -1104,6 +1104,28 @@ fn s(value: Option<&Value>) -> String {
     value.and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
+/// JSON-LD allows an image to be a URL string, an ImageObject, or an array of either.
+fn image_url(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(url)) => url.trim().to_string(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| image_url(Some(item)))
+            .find(|url| !url.is_empty())
+            .unwrap_or_default(),
+        Some(Value::Object(object)) => {
+            for key in ["url", "contentUrl", "thumbnailUrl", "image"] {
+                let url = image_url(object.get(key));
+                if !url.is_empty() {
+                    return url;
+                }
+            }
+            String::new()
+        }
+        _ => String::new(),
+    }
+}
+
 fn episode_number(url: &str) -> Option<u32> {
     url.rsplit('/').next()?.parse().ok()
 }
@@ -1120,7 +1142,7 @@ fn card(value: &Value) -> Card {
     }
     Card {
         name,
-        image: s(value.get("image")),
+        image: image_url(value.get("image")),
         episode: episode_number(&url),
         url,
     }
@@ -1212,6 +1234,8 @@ pub async fn image(url: String) -> Result<String, String> {
     }
     let res = reqwest::Client::builder()
         .user_agent(UA)
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?
         .get(&url)
@@ -1228,7 +1252,13 @@ pub async fn image(url: String) -> Result<String, String> {
         .and_then(|value| value.to_str().ok())
         .unwrap_or("image/jpeg")
         .to_string();
+    if !mime.to_ascii_lowercase().starts_with("image/") {
+        return Err(format!("Unexpected image content type: {mime}"));
+    }
     let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.is_empty() {
+        return Err("The image response was empty".to_string());
+    }
     use base64::Engine;
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
@@ -1368,7 +1398,7 @@ pub async fn anime(url: String) -> Result<Anime, String> {
     Ok(Anime {
         name: s(series.get("name")),
         url: url.clone(),
-        image: s(series.get("image")),
+        image: image_url(series.get("image")),
         description: s(series.get("description")),
         genres: series
             .get("genre")
@@ -1957,6 +1987,47 @@ mod source_parser_tests {
     }
 }
 
+
+#[cfg(test)]
+mod image_url_tests {
+    use serde_json::json;
+
+    #[test]
+    fn supports_string_image_urls() {
+        assert_eq!(
+            super::image_url(Some(&json!("https://images.anime3rb.com/poster.jpg"))),
+            "https://images.anime3rb.com/poster.jpg"
+        );
+    }
+
+    #[test]
+    fn supports_image_objects_and_arrays() {
+        let object = json!({
+            "@type": "ImageObject",
+            "contentUrl": "https://images.anime3rb.com/object.jpg"
+        });
+        assert_eq!(
+            super::image_url(Some(&object)),
+            "https://images.anime3rb.com/object.jpg"
+        );
+
+        let array = json!([
+            {"@type": "ImageObject", "url": "https://images.anime3rb.com/first.jpg"},
+            "https://images.anime3rb.com/second.jpg"
+        ]);
+        assert_eq!(
+            super::image_url(Some(&array)),
+            "https://images.anime3rb.com/first.jpg"
+        );
+    }
+
+    #[test]
+    fn ignores_empty_or_unsupported_image_values() {
+        assert_eq!(super::image_url(None), "");
+        assert_eq!(super::image_url(Some(&json!({ "name": "missing" }))), "");
+        assert_eq!(super::image_url(Some(&json!("  "))), "");
+    }
+}
 
 #[cfg(test)]
 mod episode_thumbnail_tests {
