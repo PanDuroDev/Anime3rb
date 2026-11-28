@@ -628,9 +628,16 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
             >
               <Icon name="arrowRight" size={18} />
             </button>
-            <span aria-live="polite">
-              Showing {firstVisible}–{lastVisible} of {filteredEpisodes.length} episodes
-              <span className="episode-page-number"> · Page {activePage} of {pageCount}</span>
+            <span className="episode-pagination-info" aria-live="polite">
+              <span
+                className="episode-range"
+                aria-label={`Episodes ${firstVisible} to ${lastVisible} of ${filteredEpisodes.length}`}
+              >
+                {firstVisible}–{lastVisible} / {filteredEpisodes.length}
+              </span>
+              <span className="episode-page-number" aria-label={`Page ${activePage} of ${pageCount}`}>
+                {activePage} / {pageCount}
+              </span>
             </span>
             <button
               className="ghost episode-page-arrow"
