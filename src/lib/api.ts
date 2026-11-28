@@ -243,23 +243,36 @@ export type Progress = { url: string; name: string; anime: string; image: string
 
 const KEY = "a3:progress";
 
+let progressCache: Progress[] | null = null;
+
 export const readProgress = (): Progress[] => {
+  if (progressCache) return progressCache;
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "[]");
+    progressCache = JSON.parse(localStorage.getItem(KEY) || "[]");
   } catch {
-    return [];
+    progressCache = [];
   }
+  return progressCache;
 };
 
 export const saveProgress = (entry: Progress) => {
   const list = readProgress().filter((item) => item.url !== entry.url);
   list.unshift(entry);
-  localStorage.setItem(KEY, JSON.stringify(list.slice(0, 30)));
+  progressCache = list.slice(0, 30);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(progressCache));
+  } catch {
+    // Storage may be unavailable or full; keep the in-memory history for this session.
+  }
 };
 
 export const removeProgress = (url: string) => {
-  const list = readProgress().filter((item) => item.url !== url);
-  localStorage.setItem(KEY, JSON.stringify(list));
+  progressCache = readProgress().filter((item) => item.url !== url);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(progressCache));
+  } catch {
+    // Storage may be unavailable or full; the UI still updates in memory.
+  }
 };
 
 export const progressFor = (url: string) => readProgress().find((item) => item.url === url)?.time || 0;
