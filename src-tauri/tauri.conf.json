@@ -28,7 +28,11 @@
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY5QTRDMThDNUVDMUIwOTMKUldTVHNNRmVqTUdrYWNPek9EeUJSR3FjVGtkTXlYSUdxcWlEZm1FSlNqSXpZN1EvRnJWbCtDaTMK",
       "endpoints": [
         "https://github.com/PanDuroDev/Anime3rb/releases/latest/download/latest.json"
-      ]
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
