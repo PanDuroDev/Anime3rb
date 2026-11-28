@@ -39,6 +39,7 @@ const episodeTitle = (name: string, number: number) =>
   name.replace(new RegExp(`^الحلقة\\s*${number}\\s*[-–—:]?\\s*`), "").trim();
 
 const EPISODES_PER_PAGE = 24;
+const WATCH_SIDEBAR_PAGE_SIZE = 24;
 
 const FILLER_LABELS: Record<import("./lib/api").FillerStatus, string> = {
   filler: "Filler",
@@ -659,6 +660,7 @@ function WatchView({
   const [error, setError] = useState("");
   const [side, setSide] = useState<HTMLDivElement | null>(null);
   const [episodeQuery, setEpisodeQuery] = useState("");
+  const [sidebarPage, setSidebarPage] = useState(1);
 
   const filteredEpisodes = useMemo(() => {
     const query = normalizeEpisodeNumberQuery(episodeQuery);
@@ -667,11 +669,19 @@ function WatchView({
     return (data?.episodes ?? []).filter((item) => String(item.number).includes(query));
   }, [data, episodeQuery]);
 
+  const sidebarPageCount = Math.max(1, Math.ceil(filteredEpisodes.length / WATCH_SIDEBAR_PAGE_SIZE));
+  const activeSidebarPage = Math.min(sidebarPage, sidebarPageCount);
+  const visibleSidebarEpisodes = filteredEpisodes.slice(
+    (activeSidebarPage - 1) * WATCH_SIDEBAR_PAGE_SIZE,
+    activeSidebarPage * WATCH_SIDEBAR_PAGE_SIZE
+  );
+
   useEffect(() => {
     let live = true;
     setData(null);
     setError("");
     setEpisodeQuery("");
+    setSidebarPage(1);
     fetchAnime(url)
       .then((result) => {
         if (!live) return;
@@ -698,6 +708,12 @@ function WatchView({
     };
   }, [url]);
 
+  useEffect(() => {
+    if (!data || episodeQuery) return;
+    const episodeIndex = data.episodes.findIndex((item) => item.number === number);
+    if (episodeIndex >= 0) setSidebarPage(Math.floor(episodeIndex / WATCH_SIDEBAR_PAGE_SIZE) + 1);
+  }, [data, number, episodeQuery]);
+
   // Keep the active episode visible in the sidebar without scrolling the page.
   useEffect(() => {
     if (!side) return;
@@ -705,7 +721,7 @@ function WatchView({
     side.scrollTop = card
       ? card.offsetTop - side.clientHeight / 2 + card.clientHeight / 2
       : 0;
-  }, [number, data, side, filteredEpisodes]);
+  }, [number, data, side, visibleSidebarEpisodes]);
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
@@ -759,14 +775,17 @@ function WatchView({
                 type="search"
                 inputMode="numeric"
                 value={episodeQuery}
-                onChange={(event) => setEpisodeQuery(event.currentTarget.value)}
+                onChange={(event) => {
+                  setEpisodeQuery(event.currentTarget.value);
+                  setSidebarPage(1);
+                }}
                 placeholder="Episode #"
                 aria-label="Search episodes by number"
               />
             </label>
           </div>
           <div className="side-list" ref={setSide}>
-            {filteredEpisodes.length ? filteredEpisodes.map((item) => (
+            {visibleSidebarEpisodes.length ? visibleSidebarEpisodes.map((item) => (
               <EpisodeCard
                 key={item.number}
                 animeUrl={url}
@@ -785,6 +804,13 @@ function WatchView({
               </div>
             )}
           </div>
+          {filteredEpisodes.length > WATCH_SIDEBAR_PAGE_SIZE && (
+            <div className="side-pagination" aria-label="Episode list pages">
+              <button type="button" className="ghost" disabled={activeSidebarPage <= 1} onClick={() => setSidebarPage((page) => Math.max(1, page - 1))}>Previous</button>
+              <span>{activeSidebarPage} / {sidebarPageCount}</span>
+              <button type="button" className="ghost" disabled={activeSidebarPage >= sidebarPageCount} onClick={() => setSidebarPage((page) => Math.min(sidebarPageCount, page + 1))}>Next</button>
+            </div>
+          )}
         </aside>
       </div>
     </div>

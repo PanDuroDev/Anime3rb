@@ -243,23 +243,58 @@ export type Progress = { url: string; name: string; anime: string; image: string
 
 const KEY = "a3:progress";
 
+let progressCache: Progress[] = [];
+let progressCacheLoaded = false;
+
+const isProgressEntry = (value: unknown): value is Progress => {
+  if (typeof value !== "object" || value === null) return false;
+  const entry = value as Partial<Progress>;
+  return (
+    typeof entry.url === "string" &&
+    typeof entry.name === "string" &&
+    typeof entry.anime === "string" &&
+    typeof entry.image === "string" &&
+    typeof entry.time === "number" &&
+    Number.isFinite(entry.time) &&
+    typeof entry.duration === "number" &&
+    Number.isFinite(entry.duration) &&
+    typeof entry.at === "number" &&
+    Number.isFinite(entry.at)
+  );
+};
+
 export const readProgress = (): Progress[] => {
+  if (progressCacheLoaded) return progressCache;
+
+  progressCacheLoaded = true;
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "[]");
+    const stored: unknown = JSON.parse(localStorage.getItem(KEY) || "[]");
+    progressCache = Array.isArray(stored) ? stored.filter(isProgressEntry) : [];
   } catch {
-    return [];
+    // Storage may be unavailable or contain invalid JSON.
+    progressCache = [];
   }
+  return progressCache;
 };
 
 export const saveProgress = (entry: Progress) => {
   const list = readProgress().filter((item) => item.url !== entry.url);
   list.unshift(entry);
-  localStorage.setItem(KEY, JSON.stringify(list.slice(0, 30)));
+  progressCache = list.slice(0, 30);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(progressCache));
+  } catch {
+    // Storage may be unavailable or full; keep the in-memory history for this session.
+  }
 };
 
 export const removeProgress = (url: string) => {
-  const list = readProgress().filter((item) => item.url !== url);
-  localStorage.setItem(KEY, JSON.stringify(list));
+  progressCache = readProgress().filter((item) => item.url !== url);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(progressCache));
+  } catch {
+    // Storage may be unavailable or full; the UI still updates in memory.
+  }
 };
 
 export const progressFor = (url: string) => readProgress().find((item) => item.url === url)?.time || 0;
