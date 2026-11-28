@@ -36,7 +36,7 @@ const mismatchedInstallers = [nsisInstaller, msiInstaller].filter(
 if (mismatchedInstallers.length > 0) {
   console.error(
     `Installer filename version does not match release version ${version}`,
-    mismatchedInstallers.map(basename),
+    mismatchedInstallers.map((installer) => basename(installer)),
   );
   process.exit(1);
 }
