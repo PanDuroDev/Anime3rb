@@ -16,6 +16,7 @@ export default function UpdateBanner() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [error, setError] = useState("");
+  const [errorVersion, setErrorVersion] = useState<string | null>(null);
   const [hidden, setHidden] = useState<string | null>(null);
 
   const scan = useCallback(async () => {
@@ -59,9 +60,10 @@ export default function UpdateBanner() {
 
   if (!update || hidden === update.version) return null;
 
+  const activeError = errorVersion === update.version ? error : "";
   const signatureVerificationFailed =
     /signature verification failed|failed to verify (?:the )?signature|signature (?:is )?(?:invalid|mismatch|does not match)/i.test(
-      error,
+      activeError,
     );
   const percentage = progress?.finished
     ? 100
@@ -72,12 +74,14 @@ export default function UpdateBanner() {
   const run = async () => {
     setBusy(true);
     setError("");
+    setErrorVersion(null);
     setProgress(null);
     try {
       await update.install(setProgress);
       if (update.external) setUpdate(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      setErrorVersion(update.version);
       setProgress(null);
       setBusy(false);
     }
@@ -88,11 +92,11 @@ export default function UpdateBanner() {
       <div className="update-text">
         <strong>Update {update.version}</strong>
         <span>{update.external ? "Download the new APK to install it." : "A newer version is ready."}</span>
-        {error && (
+        {activeError && (
           <span className="update-error">
             {signatureVerificationFailed
               ? "The update signature could not be verified. Installation was blocked for security. Anime3rb checks signatures automatically; no separate signature file is needed."
-              : error}
+              : activeError}
           </span>
         )}
       </div>
@@ -127,7 +131,7 @@ export default function UpdateBanner() {
             : `${percentage}%`
           : signatureVerificationFailed
             ? "Blocked"
-            : error
+            : activeError
               ? "Retry"
               : update.external
                 ? "Download"
