@@ -1056,6 +1056,8 @@ fn thumbnail_data(page: &str) -> ThumbnailData {
 async fn get(url: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .user_agent(UA)
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
     // The CDN occasionally drops a connection; one retry is enough.
