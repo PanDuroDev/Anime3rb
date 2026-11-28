@@ -14,6 +14,8 @@ on:
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
       - "src-tauri/tauri.conf.json"
+      - "scripts/**"
+      - ".github/workflows/build.yml"
   pull_request:
     branches:
       - main
@@ -53,9 +55,11 @@ jobs:
 
       - name: Bump version and tag
         id: release
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          version="${{ inputs.version }}"
+          version="$VERSION_INPUT"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Version must look like 1.2.3" >&2
             exit 1
