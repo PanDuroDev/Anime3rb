@@ -14,6 +14,7 @@ import {
   browse,
   home as fetchHome,
   readProgress,
+  removeProgress,
   search as searchTitles,
 } from "./lib/api";
 
@@ -230,11 +231,13 @@ function Rail({
   items,
   open,
   progress,
+  onRemove,
 }: {
   title: string;
   items: Card[];
   open: (item: Card) => void;
   progress?: Map<string, Progress>;
+  onRemove?: (item: Card) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ start: true, end: false });
@@ -289,20 +292,33 @@ function Rail({
             const seen = progress?.get(item.url);
             const percent = seen && seen.duration ? Math.min(100, (seen.time / seen.duration) * 100) : 0;
             return (
-              <button className="rail-card" key={item.url} type="button" onClick={() => open(item)}>
-                <span className="poster">
-                  <Img src={item.image} />
-                  {item.episode ? <span className="badge">EP {item.episode}</span> : null}
-                  {percent > 0 && (
-                    <span className="pbar">
-                      <i style={{ width: `${percent}%` }} />
-                    </span>
-                  )}
-                </span>
-                <span className="card-name" title={item.name}>
-                  {item.name}
-                </span>
-              </button>
+              <div className="rail-item" key={item.url}>
+                <button className="rail-card" type="button" onClick={() => open(item)}>
+                  <span className="poster">
+                    <Img src={item.image} />
+                    {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                    {percent > 0 && (
+                      <span className="pbar">
+                        <i style={{ width: `${percent}%` }} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="card-name" title={item.name}>
+                    {item.name}
+                  </span>
+                </button>
+                {onRemove && (
+                  <button
+                    className="rail-remove"
+                    type="button"
+                    aria-label={`Remove ${item.name} from Continue watching`}
+                    title="Remove from Continue watching"
+                    onClick={() => onRemove(item)}
+                  >
+                    <Icon name="delete" size={18} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -323,11 +339,14 @@ function Rail({
 function HomeView({ open, resume }: { open: (url: string) => void; resume: (url: string, play: number) => void }) {
   const [data, setData] = useState<Home | null>(null);
   const [error, setError] = useState("");
-  const history = useMemo<Progress[]>(
-    () => readProgress().filter((item) => item.time > 5 && !(item.duration > 0 && item.time / item.duration >= 0.92)),
-    []
+  const [history, setHistory] = useState<Progress[]>(() =>
+    readProgress().filter((item) => item.time > 5 && !(item.duration > 0 && item.time / item.duration >= 0.92))
   );
   const seen = useMemo(() => new Map(history.map((item) => [item.url, item])), [history]);
+  const removeFromHistory = (item: Card) => {
+    removeProgress(item.url);
+    setHistory((current) => current.filter((entry) => entry.url !== item.url));
+  };
   const watching = useMemo<Card[]>(
     () =>
       history.map((item) => ({
@@ -356,6 +375,7 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
           items={watching}
           progress={seen}
           open={(item) => resume(animeUrlFor(item.url), episodeNumber(item.url))}
+          onRemove={removeFromHistory}
         />
       )}
       {data.rails.map((rail) => (
