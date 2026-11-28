@@ -19,7 +19,7 @@ jobs:
   release:
     if: >
       github.event.issue.pull_request == null &&
-      startsWith(github.event.comment.body, '/release') &&
+      contains(github.event.comment.body, '/release') &&
       (github.event.comment.user.login == vars.RELEASE_BOT ||
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
@@ -31,9 +31,18 @@ jobs:
             const issue_number = context.issue.number;
             const body = context.payload.comment.body.trim();
             const say = (text) => github.rest.issues.createComment({ ...repo, issue_number, body: text });
+            const compare = (a, b) => {
+              const pa = a.split('.').map(Number);
+              const pb = b.split('.').map(Number);
+              for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+              return 0;
+            };
 
             const match = body.match(/^\/release(?:\s+(\S+))?/i);
             if (!match) return;
+
+            const latest = await github.rest.repos.getLatestRelease(repo).catch(() => null);
+            const latestVersion = (latest?.data?.tag_name || 'v0.0.0').replace(/^v/, '');
 
             // Version: explicit semver, or patch/minor/major from the latest release.
             const requested = (match[1] || 'patch').toLowerCase();
@@ -43,12 +52,15 @@ jobs:
                 await say('Use `/release 0.1.7`, or `/release patch`, `/release minor`, `/release major`.');
                 return;
               }
-              const latest = await github.rest.repos.getLatestRelease(repo).catch(() => null);
-              const base = (latest?.data?.tag_name || 'v0.0.0').replace(/^v/, '');
-              const [major, minor, patch] = base.split('.').map(Number);
+              const [major, minor, patch] = latestVersion.split('.').map(Number);
               version = requested === 'major' ? `${major + 1}.0.0`
                 : requested === 'minor' ? `${major}.${minor + 1}.0`
                 : `${major}.${minor}.${patch + 1}`;
+            }
+
+            if (/^\d+\.\d+\.\d+$/.test(latestVersion) && compare(version, latestVersion) <= 0) {
+              await say(`Version \`${version}\` must be higher than the latest release \`${latestVersion}\`.`);
+              return;
             }
 
             const tag = `v${version}`;
