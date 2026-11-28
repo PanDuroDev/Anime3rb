@@ -1011,6 +1011,36 @@ input { font: inherit; }
   text-align: center;
 }
 
+.seek-feedback {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, .62);
+  color: var(--white);
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  animation: player-seek-feedback .65s ease both;
+}
+
+.seek-feedback.is-left { left: 14%; }
+.seek-feedback.is-right { right: 14%; }
+
+@keyframes player-seek-feedback {
+  0% { opacity: 0; transform: translateY(-50%) scale(.82); }
+  18% { opacity: 1; transform: translateY(-50%) scale(1); }
+  76% { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(.94); }
+}
+
 .controls {
   position: absolute;
   inset-inline: 0;
