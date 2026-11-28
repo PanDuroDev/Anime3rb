@@ -1731,25 +1731,6 @@ input { font: inherit; }
 }
 
 
-.source-credits {
-  padding: 14px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.source-credits a {
-  color: var(--muted);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 2px;
-}
-
-.source-credits a:hover {
-  color: var(--text);
-}
-
 /* ---------- Update banner ---------- */
 
 .update-banner {
