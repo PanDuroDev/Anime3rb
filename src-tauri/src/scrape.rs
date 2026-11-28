@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -35,6 +35,17 @@ pub struct Episode {
     pub number: u32,
     pub name: String,
     pub url: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FillerInfo {
+    pub status: String,
+    pub sources: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -79,6 +90,7 @@ static ARTWORK_CACHE: OnceLock<Mutex<HashMap<String, ArtworkCacheEntry>>> = Once
 static EPISODE_ARTWORK_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static KITSU_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static ANIZIP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static FILLER_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static NOGITSU_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 static NOGITSU_RATE_LOCK: OnceLock<tokio::sync::Mutex<Option<Instant>>> = OnceLock::new();
 
@@ -362,6 +374,319 @@ async fn resolve_kitsu_anilist_id(kitsu_id: &str) -> Result<String, String> {
             Err("Kitsu has no AniList mapping for this anime".to_string())
         }
     }
+}
+
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct FillerSourceRecord {
+    status: String,
+    #[serde(default)]
+    source_count: Option<u32>,
+    #[serde(default)]
+    note: Option<String>,
+}
+
+const ANIFILLERPEDIA_API: &str = "https://anifillerpedia.wiki/api/v1";
+const FILLERLISTS_API: &str = "https://fillerlists.com/api/v1";
+
+fn filler_client() -> &'static reqwest::Client {
+    FILLER_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent("Anime3rb/0.1.8 (episode filler metadata)")
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+async fn filler_json(url: &str) -> Result<Value, String> {
+    let response = filler_client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?
+        .error_for_status()
+        .map_err(|error| error.to_string())?;
+    response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("Invalid filler metadata response: {error}"))
+}
+
+fn json_records(payload: &Value) -> Option<&Vec<Value>> {
+    payload
+        .as_array()
+        .or_else(|| payload.get("items").and_then(Value::as_array))
+}
+
+fn json_id(value: Option<&Value>) -> Option<String> {
+    value.and_then(|item| {
+        item.as_u64()
+            .map(|number| number.to_string())
+            .or_else(|| item.as_str().map(str::to_string))
+    })
+}
+
+fn normalized_filler_status(value: &str) -> Option<String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "filler" => Some("filler".to_string()),
+        "mixed" => Some("mixed".to_string()),
+        "anime-canon" => Some("anime-canon".to_string()),
+        "canon" => Some("canon".to_string()),
+        _ => None,
+    }
+}
+
+async fn anifillerpedia_episodes(
+    anilist_id: &str,
+) -> Result<HashMap<u32, FillerSourceRecord>, String> {
+    let cache_key = format!("anifillerpedia-episodes:{anilist_id}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        if cached == "!" {
+            return Ok(HashMap::new());
+        }
+        if let Ok(records) = serde_json::from_str::<HashMap<u32, FillerSourceRecord>>(&cached) {
+            return Ok(records);
+        }
+    }
+
+    let search_url = format!("{ANIFILLERPEDIA_API}/series?anilist_id={anilist_id}&limit=10");
+    let payload = filler_json(&search_url).await?;
+    let series_id = json_records(&payload)
+        .and_then(|items| {
+            items.iter().find(|item| {
+                json_id(item.get("anilist_id")).as_deref() == Some(anilist_id)
+            })
+        })
+        .and_then(|item| json_id(item.get("id")));
+
+    let Some(series_id) = series_id else {
+        artwork_cache_put(cache_key, "!".to_string());
+        return Ok(HashMap::new());
+    };
+
+    let episodes_url = format!("{ANIFILLERPEDIA_API}/series/{series_id}/episodes");
+    let payload = filler_json(&episodes_url).await?;
+    let mut records = HashMap::new();
+    if let Some(episodes) = json_records(&payload) {
+        for episode in episodes {
+            let Some(number) = episode
+                .get("episode_number")
+                .and_then(Value::as_u64)
+                .and_then(|number| u32::try_from(number).ok())
+            else {
+                continue;
+            };
+            let Some(status) = episode
+                .get("status")
+                .and_then(Value::as_str)
+                .and_then(normalized_filler_status)
+            else {
+                continue;
+            };
+            records.insert(
+                number,
+                FillerSourceRecord {
+                    status,
+                    source_count: episode
+                        .pointer("/citation/source_count")
+                        .and_then(Value::as_u64)
+                        .and_then(|count| u32::try_from(count).ok()),
+                    note: episode
+                        .pointer("/citation/methodology_note")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                },
+            );
+        }
+    }
+
+    if let Ok(serialized) = serde_json::to_string(&records) {
+        artwork_cache_put(cache_key, serialized);
+    }
+    Ok(records)
+}
+
+async fn anizip_tvdb_id(anilist_id: &str) -> Result<Option<u64>, String> {
+    let cache_key = format!("anizip-tvdb-id:{anilist_id}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        return Ok(cached.parse::<u64>().ok());
+    }
+
+    let url = format!("{ANIZIP_API}/mappings?anilist_id={anilist_id}");
+    let payload = filler_json(&url).await?;
+    let id = payload
+        .pointer("/mappings/thetvdb_id")
+        .and_then(Value::as_u64)
+        .or_else(|| payload.pointer("/mappings/thetvdb_id").and_then(Value::as_str).and_then(|value| value.parse().ok()))
+        .or_else(|| payload.pointer("/mappings/thetvdbId").and_then(Value::as_u64));
+
+    artwork_cache_put(
+        cache_key,
+        id.map(|value| value.to_string()).unwrap_or_else(|| "!".to_string()),
+    );
+    Ok(id)
+}
+
+async fn fillerlists_episodes(
+    tvdb_id: u64,
+) -> Result<HashMap<u32, FillerSourceRecord>, String> {
+    let cache_key = format!("fillerlists-episodes:{tvdb_id}");
+    if let Some(cached) = artwork_cache_get(&cache_key) {
+        if cached == "!" {
+            return Ok(HashMap::new());
+        }
+        if let Ok(records) = serde_json::from_str::<HashMap<u32, FillerSourceRecord>>(&cached) {
+            return Ok(records);
+        }
+    }
+
+    let lookup_url = format!("{FILLERLISTS_API}/shows?tvdb={tvdb_id}");
+    let payload = filler_json(&lookup_url).await?;
+    let show = payload
+        .get("shows")
+        .and_then(Value::as_array)
+        .and_then(|shows| {
+            shows.iter().find(|show| {
+                show.pointer("/ids/tvdb")
+                    .and_then(Value::as_u64)
+                    .map(|id| id == tvdb_id)
+                    .unwrap_or(false)
+            })
+        });
+    let slug = show
+        .and_then(|show| show.get("show").and_then(Value::as_str))
+        .filter(|slug| {
+            !slug.is_empty()
+                && slug
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-')
+        });
+
+    let Some(slug) = slug else {
+        artwork_cache_put(cache_key, "!".to_string());
+        return Ok(HashMap::new());
+    };
+
+    let data_url = format!("https://fillerlists.com/data/{slug}.json");
+    let payload = filler_json(&data_url).await?;
+    let mut records = HashMap::new();
+    if let Some(episodes) = payload.get("episodes").and_then(Value::as_array) {
+        for episode in episodes {
+            let Some(number) = episode
+                .get("n")
+                .and_then(Value::as_u64)
+                .and_then(|number| u32::try_from(number).ok())
+            else {
+                continue;
+            };
+            let Some(status) = episode
+                .get("type")
+                .and_then(Value::as_str)
+                .and_then(normalized_filler_status)
+            else {
+                // FillerLists uses "unknown" when its own reference sources disagree or are missing.
+                continue;
+            };
+            records.insert(
+                number,
+                FillerSourceRecord {
+                    status,
+                    source_count: None,
+                    note: None,
+                },
+            );
+        }
+    }
+
+    if let Ok(serialized) = serde_json::to_string(&records) {
+        artwork_cache_put(cache_key, serialized);
+    }
+    Ok(records)
+}
+
+fn combine_filler_records(
+    anifillerpedia: Option<&FillerSourceRecord>,
+    fillerlists: Option<&FillerSourceRecord>,
+) -> Option<FillerInfo> {
+    let (status, sources, note, source_count) = match (anifillerpedia, fillerlists) {
+        (Some(first), Some(second)) if first.status == second.status => (
+            first.status.clone(),
+            vec!["AniFillerPedia".to_string(), "FillerLists".to_string()],
+            first.note.clone(),
+            first.source_count,
+        ),
+        (Some(first), Some(second)) => (
+            "disputed".to_string(),
+            vec!["AniFillerPedia".to_string(), "FillerLists".to_string()],
+            Some(format!(
+                "AniFillerPedia: {}; FillerLists: {}",
+                first.status, second.status
+            )),
+            first.source_count,
+        ),
+        (Some(record), None) => (
+            record.status.clone(),
+            vec!["AniFillerPedia".to_string()],
+            record.note.clone(),
+            record.source_count,
+        ),
+        (None, Some(record)) => (
+            record.status.clone(),
+            vec!["FillerLists".to_string()],
+            None,
+            None,
+        ),
+        (None, None) => return None,
+    };
+
+    Some(FillerInfo {
+        status,
+        sources,
+        source_count,
+        note,
+    })
+}
+
+async fn anime_filler_classifications(
+    anime_url: &str,
+    anime_name: &str,
+) -> HashMap<u32, FillerInfo> {
+    let Ok(kitsu_id) = resolve_kitsu_anime_id(anime_url, anime_name).await else {
+        return HashMap::new();
+    };
+    let Ok(anilist_id) = resolve_kitsu_anilist_id(&kitsu_id).await else {
+        return HashMap::new();
+    };
+
+    // Look up both independent references concurrently, then use TVDB only for the FillerLists fallback.
+    let (anifiller_result, tvdb_result) = tokio::join!(
+        anifillerpedia_episodes(&anilist_id),
+        anizip_tvdb_id(&anilist_id)
+    );
+    let anifillerpedia = anifiller_result.unwrap_or_default();
+    let fillerlists = match tvdb_result.ok().flatten() {
+        Some(tvdb_id) => fillerlists_episodes(tvdb_id).await.unwrap_or_default(),
+        None => HashMap::new(),
+    };
+
+    let mut classifications = HashMap::new();
+    for (number, record) in &anifillerpedia {
+        if let Some(info) = combine_filler_records(
+            Some(record),
+            fillerlists.get(number),
+        ) {
+            classifications.insert(*number, info);
+        }
+    }
+    for (number, record) in &fillerlists {
+        if !classifications.contains_key(number) {
+            if let Some(info) = combine_filler_records(None, Some(record)) {
+                classifications.insert(*number, info);
+            }
+        }
+    }
+    classifications
 }
 
 fn valid_episode_artwork_url(value: &str) -> bool {
@@ -1052,6 +1377,13 @@ pub async fn anime(url: String) -> Result<Anime, String> {
     })
 }
 
+#[tauri::command]
+pub async fn filler_classifications(
+    anime_url: String,
+    anime_name: String,
+) -> Result<HashMap<u32, FillerInfo>, String> {
+    Ok(anime_filler_classifications(&anime_url, &anime_name).await)
+}
 fn extract_episode_player_url(html: &str) -> Option<String> {
     let player = regex::Regex::new(r#""video_url":"(https:[^"]+)""#).ok()?;
     player

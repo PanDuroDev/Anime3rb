@@ -8,6 +8,7 @@ import {
   Card,
   Episode,
   episodeCatalogThumbnail,
+  fillerClassifications as fetchFillerClassifications,
   Home,
   Progress,
   anime as fetchAnime,
@@ -38,6 +39,14 @@ const episodeTitle = (name: string, number: number) =>
   name.replace(new RegExp(`^الحلقة\\s*${number}\\s*[-–—:]?\\s*`), "").trim();
 
 const EPISODES_PER_PAGE = 24;
+
+const FILLER_LABELS: Record<import("./lib/api").FillerStatus, string> = {
+  filler: "Filler",
+  mixed: "Mixed",
+  "anime-canon": "Anime Canon",
+  canon: "Manga Canon",
+  disputed: "Disputed",
+};
 
 export default function App() {
   const [view, setView] = useState<View>({ kind: "home" });
@@ -118,11 +127,23 @@ export default function App() {
         )}
       </main>
       <footer className="source-credits">
-        Episode artwork: <a href="https://kitsu.io" target="_blank" rel="noreferrer">Kitsu</a>
-        {" · "}
-        <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
-        {" · "}
-        <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
+        <div>
+          Episode artwork: <a href="https://kitsu.io" target="_blank" rel="noreferrer">Kitsu</a>
+          {" · "}
+          <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
+          {" · "}
+          <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
+        </div>
+        <div>
+          Episode classification: <a href="https://anifillerpedia.wiki/docs/guide" target="_blank" rel="noreferrer">AniFillerPedia</a>
+          {" ("}
+          <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noreferrer">CC BY-NC-SA 4.0</a>
+          {") · "}
+          <a href="https://fillerlists.com/data" target="_blank" rel="noreferrer">FillerLists</a>
+          {" ("}
+          <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>
+          {")"}
+        </div>
       </footer>
       <UpdateBanner />
     </div>
@@ -470,7 +491,25 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
     setEpisodeQuery("");
     setEpisodePage(1);
     fetchAnime(url)
-      .then((result) => live && setData(result))
+      .then((result) => {
+        if (!live) return;
+        setData(result);
+        // Classification is fetched separately so provider latency never blocks the page.
+        fetchFillerClassifications(url, result.name)
+          .then((classifications) => {
+            if (!live) return;
+            setData((current) => current && current.url === url
+              ? {
+                  ...current,
+                  episodes: current.episodes.map((item) => ({
+                    ...item,
+                    filler: classifications[item.number],
+                  })),
+                }
+              : current);
+          })
+          .catch(() => {});
+      })
       .catch((reason) => live && setError(String(reason)));
     return () => {
       live = false;
@@ -632,7 +671,25 @@ function WatchView({
     setError("");
     setEpisodeQuery("");
     fetchAnime(url)
-      .then((result) => live && setData(result))
+      .then((result) => {
+        if (!live) return;
+        setData(result);
+        // Classification is fetched separately so provider latency never blocks the page.
+        fetchFillerClassifications(url, result.name)
+          .then((classifications) => {
+            if (!live) return;
+            setData((current) => current && current.url === url
+              ? {
+                  ...current,
+                  episodes: current.episodes.map((item) => ({
+                    ...item,
+                    filler: classifications[item.number],
+                  })),
+                }
+              : current);
+          })
+          .catch(() => {});
+      })
       .catch((reason) => live && setError(String(reason)));
     return () => {
       live = false;
@@ -899,6 +956,15 @@ function EpisodeCard({
         <span className="ep-num">
           Episode {item.number}
           {watched && <span className="ep-done">Watched</span>}
+          {item.filler && (
+            <span
+              className={`filler-tag is-${item.filler.status}`}
+              title={`Source: ${item.filler.sources.join(", ")}${item.filler.sourceCount ? ` · ${item.filler.sourceCount} references` : ""}${item.filler.note ? `\n${item.filler.note}` : ""}`}
+              aria-label={`Filler classification: ${FILLER_LABELS[item.filler.status]}`}
+            >
+              {FILLER_LABELS[item.filler.status]}
+            </span>
+          )}
         </span>
         {title && <span className="ep-name">{title}</span>}
       </span>
