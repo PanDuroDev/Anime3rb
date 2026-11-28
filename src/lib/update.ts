@@ -5,6 +5,7 @@ import { check } from "@tauri-apps/plugin-updater";
 
 const RELEASE_API = "https://api.github.com/repos/PanDuroDev/Anime3rb/releases/latest";
 const ANDROID = /Android/i.test(navigator.userAgent);
+const WINDOWS = /Windows/i.test(navigator.userAgent);
 
 export type PendingUpdate = {
   version: string;
@@ -39,7 +40,8 @@ export async function findUpdate(): Promise<PendingUpdate | null> {
           onProgress(1);
         }
       });
-      await relaunch();
+      // Windows exits the app and the installer restarts it; other platforms need a manual relaunch.
+      if (!WINDOWS) await relaunch();
     },
   };
 }
