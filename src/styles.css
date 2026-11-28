@@ -944,6 +944,12 @@ input { font: inherit; }
 
 /* ---------- Player ---------- */
 
+/* Prevent Android WebView from flashing its native tap highlight over controls. */
+.player,
+.player * {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .player {
   position: relative;
   aspect-ratio: 16 / 9;
