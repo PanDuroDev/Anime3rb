@@ -1,5 +1,5 @@
 import { access, copyFile, mkdir, readFile } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
