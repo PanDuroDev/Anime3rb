@@ -43,7 +43,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const latestPillsVisible = useRef(false);
   const wakeControls = useRef<(force?: boolean, pointerActivity?: boolean) => void>(() => {});
   const lastTouch = useRef<{ at: number; side: "left" | "right" } | null>(null);
+  const tapCandidate = useRef<{ pointerId: number; startX: number; startY: number; side: "left" | "right"; moved: boolean } | null>(null);
   const touchGesture = useRef<{ pointerId: number; startY: number; startVolume: number; active: boolean } | null>(null);
+  const seekFeedbackTimer = useRef<number | null>(null);
   const pointerType = useRef("");
   const latestLocked = useRef(false);
   const activeEpisodeUrl = useRef(url);
@@ -77,6 +79,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const [pipSupported, setPipSupported] = useState(false);
   const [theater, setTheater] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [seekFeedback, setSeekFeedback] = useState<"left" | "right" | null>(null);
   const [cues, setCues] = useState<Cue[]>([]);
   const [hover, setHover] = useState<{ x: number; time: number } | null>(null);
   const [ranges, setRanges] = useState<{ start: number; end: number }[]>([]);
@@ -503,7 +506,11 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     if (event.pointerType !== "touch") return;
 
     const target = event.target as HTMLElement;
-    if (target.closest("button, input, .seek, .controls")) {
+    // Real controls should keep their native button/range behavior and must not
+    // count as one half of a video-surface double tap.
+    if (target.closest("button, input, .seek, .panel")) {
+      tapCandidate.current = null;
+      lastTouch.current = null;
       touchGesture.current = null;
       return;
     }
@@ -511,16 +518,13 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     const rect = wrap.current?.getBoundingClientRect();
     if (!rect) return;
     const side = event.clientX < rect.left + rect.width / 2 ? "left" : "right";
-    const now = Date.now();
-    const previous = lastTouch.current;
-    if (previous && now - previous.at <= 320 && previous.side === side) {
-      seekBy(side === "left" ? -10 : 10);
-      lastTouch.current = null;
-      touchGesture.current = null;
-      return;
-    }
-
-    lastTouch.current = { at: now, side };
+    tapCandidate.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      side,
+      moved: false,
+    };
     touchGesture.current = side === "right"
       ? { pointerId: event.pointerId, startY: event.clientY, startVolume: video.current?.volume ?? volume, active: false }
       : null;
@@ -528,6 +532,13 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (latestLocked.current) return;
+
+    const tap = tapCandidate.current;
+    if (tap?.pointerId === event.pointerId &&
+        Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 8) {
+      tap.moved = true;
+    }
+
     const gesture = touchGesture.current;
     if (event.pointerType === "touch" && gesture?.pointerId === event.pointerId && !locked) {
       const delta = gesture.startY - event.clientY;
@@ -546,9 +557,44 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     wake();
   };
 
-  const handlePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (touchGesture.current?.pointerId === event.pointerId) touchGesture.current = null;
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = touchGesture.current;
+    if (gesture?.pointerId === event.pointerId) touchGesture.current = null;
+
+    const tap = tapCandidate.current;
+    if (!tap || tap.pointerId !== event.pointerId) return;
+    tapCandidate.current = null;
+
+    if (tap.moved || latestLocked.current) {
+      lastTouch.current = null;
+      return;
+    }
+
+    const now = Date.now();
+    const previous = lastTouch.current;
+    if (previous && now - previous.at <= 450 && previous.side === tap.side) {
+      seekBy(tap.side === "left" ? -10 : 10);
+      setSeekFeedback(tap.side);
+      if (seekFeedbackTimer.current !== null) window.clearTimeout(seekFeedbackTimer.current);
+      seekFeedbackTimer.current = window.setTimeout(() => {
+        seekFeedbackTimer.current = null;
+        setSeekFeedback(null);
+      }, 650);
+      lastTouch.current = null;
+    } else {
+      lastTouch.current = { at: now, side: tap.side };
+    }
   };
+
+  const handlePointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (touchGesture.current?.pointerId === event.pointerId) touchGesture.current = null;
+    if (tapCandidate.current?.pointerId === event.pointerId) tapCandidate.current = null;
+    lastTouch.current = null;
+  };
+
+  useEffect(() => () => {
+    if (seekFeedbackTimer.current !== null) window.clearTimeout(seekFeedbackTimer.current);
+  }, []);
 
   // Do not force focus onto the entire player after a touch.
   // The window-level keyboard handler already supports player shortcuts,
@@ -562,8 +608,8 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       onFocusCapture={() => wake()}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     >
       <video
         ref={video}
@@ -577,6 +623,16 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       {error && <div className="player-error">{error}</div>}
       {!data && !error && <div className="spinner is-visible" />}
       {data && buffering && <div className="spinner" />}
+      {seekFeedback && (
+        <div
+          className={`seek-feedback is-${seekFeedback}`}
+          role="status"
+          aria-label={seekFeedback === "left" ? "Back 10 seconds" : "Forward 10 seconds"}
+        >
+          <Icon name={seekFeedback === "left" ? "rewind-back-10" : "rewind-forward-10"} size={30} />
+          <span>{seekFeedback === "left" ? "−10s" : "+10s"}</span>
+        </div>
+      )}
 
       <button
         className="center"
