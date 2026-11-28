@@ -19,6 +19,7 @@ pub fn run() {
             scrape::search,
             scrape::browse,
             scrape::anime,
+            scrape::filler_classifications,
             scrape::episode,
             scrape::episode_catalog_thumbnail,
             scrape::thumbnail_info,
