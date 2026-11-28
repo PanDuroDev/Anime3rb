@@ -1136,7 +1136,15 @@ const SOURCE_HOOK: &str = r#"(function () {
       pendingBody = null;
     }).catch(function () {
       sending = false;
-      if (visible) showStatus("prompt");
+      if (visible) {
+        if (androidRuntime) {
+          loopbackPermission().then(function (permission) {
+            showStatus(permission);
+          });
+        } else {
+          showStatus("prompt");
+        }
+      }
     });
   }
 
