@@ -49,6 +49,11 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const pointerType = useRef("");
   const latestLocked = useRef(false);
   const activeEpisodeUrl = useRef(url);
+  const videoEpisodeUrl = useRef("");
+  const autoplayEpisodeRef = useRef(false);
+  const resumeAppliedForUrl = useRef("");
+  const lastProgressSavedTime = useRef(0);
+  const lastUiTimeSecond = useRef(-1);
   const dataEpisodeUrl = useRef("");
   const cueLoadingFor = useRef<string | null>(null);
   const cueRetryAt = useRef(0);
@@ -94,6 +99,22 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     setData(null);
     setError("");
     setSource(0);
+    setTime(0);
+    setDuration(0);
+    setPlaying(false);
+    setBuffering(false);
+    setBuffered(0);
+    videoEpisodeUrl.current = "";
+    resumeAppliedForUrl.current = "";
+    lastProgressSavedTime.current = 0;
+    lastUiTimeSecond.current = -1;
+    const videoNode = video.current;
+    autoplayEpisodeRef.current = Boolean(videoNode && !videoNode.paused && !videoNode.ended);
+    if (videoNode) {
+      videoNode.pause();
+      videoNode.removeAttribute("src");
+      videoNode.load();
+    }
     setCues([]);
     dataEpisodeUrl.current = "";
     cueLoadingFor.current = null;
@@ -111,9 +132,18 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
         const candidates = freeSources.length
           ? freeSources
           : result.sources.map((item, index) => ({ item, index }));
-        const best = candidates.reduce(
+        const isAndroid = /Android/i.test(navigator.userAgent || "");
+        const androidCandidates = isAndroid
+          ? candidates.filter(({ item }) => Number(item.res) <= 720)
+          : candidates;
+        const pool = androidCandidates.length
+          ? androidCandidates
+          : isAndroid
+            ? candidates.slice().sort((a, b) => Number(a.item.res) - Number(b.item.res)).slice(0, 1)
+            : candidates;
+        const best = pool.reduce(
           (pick, entry) => Number(entry.item.res) > Number(result.sources[pick].res) ? entry.index : pick,
-          candidates[0]?.index ?? 0
+          pool[0]?.index ?? 0
         );
         setSource(best);
       })
@@ -197,15 +227,34 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   useEffect(() => {
     const node = video.current;
     if (!node || !current) return;
-    const wasPlaying = !node.paused;
-    const at = node.currentTime;
+
+    const episodeChanged = videoEpisodeUrl.current !== url;
+    const wasPlaying = episodeChanged ? autoplayEpisodeRef.current : !node.paused;
+    const at = episodeChanged ? 0 : node.currentTime;
+
+    if (episodeChanged) {
+      node.pause();
+      node.removeAttribute("src");
+      node.load();
+      videoEpisodeUrl.current = url;
+    } else {
+      node.pause();
+    }
+
     node.src = current.src;
     node.load();
-    if (at > 0) {
-      node.currentTime = at;
-      if (wasPlaying) node.play().catch(() => {});
+
+    if (!episodeChanged && at > 0) {
+      const restoreQualityPosition = () => {
+        node.currentTime = at;
+        if (wasPlaying) node.play().catch(() => {});
+      };
+      node.addEventListener("loadedmetadata", restoreQualityPosition, { once: true });
+    } else if (episodeChanged && wasPlaying) {
+      const resumeEpisode = () => node.play().catch(() => {});
+      node.addEventListener("loadedmetadata", resumeEpisode, { once: true });
     }
-  }, [current]);
+  }, [current, url]);
 
   useEffect(() => {
     const node = video.current;
@@ -213,16 +262,25 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     const onMeta = () => {
       const total = Number.isFinite(node.duration) ? node.duration : 0;
       setDuration(total);
-      const resume = progressFor(url);
-      if (resume > 5 && resume < total - 15) node.currentTime = resume;
+      if (resumeAppliedForUrl.current !== url) {
+        const resume = progressFor(url);
+        if (resume > 5 && resume < total - 15) node.currentTime = resume;
+        resumeAppliedForUrl.current = url;
+        lastProgressSavedTime.current = node.currentTime;
+      }
     };
     const onDuration = () => {
       setDuration(Number.isFinite(node.duration) ? node.duration : 0);
     };
     const onTime = () => {
-      setTime(node.currentTime);
+      const second = Math.floor(node.currentTime);
+      if (second !== lastUiTimeSecond.current) {
+        lastUiTimeSecond.current = second;
+        setTime(node.currentTime);
+      }
       const total = node.duration || 0;
-      if (total && Math.floor(node.currentTime) % 5 === 0) {
+      if (total && node.currentTime - lastProgressSavedTime.current >= 5) {
+        lastProgressSavedTime.current = node.currentTime;
         save({ url, name: "", anime: "", image: "", time: node.currentTime, duration: total, at: Date.now() });
       }
     };
@@ -232,6 +290,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       setPlaying(false);
       const total = node.duration || 0;
       if (total > 0) {
+        lastProgressSavedTime.current = node.currentTime;
         save({ url, name: "", anime: "", image: "", time: node.currentTime, duration: total, at: Date.now() });
       }
     };
