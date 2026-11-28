@@ -4,7 +4,7 @@ use std::{env, error::Error, fs, path::Path, process};
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("Could not derive updater public key: {error}");
+        eprintln!("Updater signing-key inspection failed: {error}");
         process::exit(1);
     }
 }
@@ -31,10 +31,37 @@ fn run() -> Result<(), Box<dyn Error>> {
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let public_key_document = public_key.to_box()?.to_string();
-    let encoded_public_key = STANDARD.encode(public_key_document);
+    let encoded_public_key = STANDARD.encode(&public_key_document);
+
+    let config_text = fs::read_to_string("src-tauri/tauri.conf.json")?;
+    let config: serde_json::Value = serde_json::from_str(&config_text)?;
+    let embedded_encoded = config
+        .get("plugins")
+        .and_then(|v| v.get("updater"))
+        .and_then(|v| v.get("pubkey"))
+        .and_then(|v| v.as_str())
+        .ok_or("plugins.updater.pubkey is missing from tauri.conf.json")?;
+    let embedded_document = STANDARD.decode(embedded_encoded.trim())?;
 
     println!("Derived updater public key ID: {public_key_id}");
-    println!("Derived updater public key (public material only):");
-    println!("{encoded_public_key}");
+    if embedded_document != public_key_document.as_bytes() {
+        let derived = public_key_document.as_bytes();
+        let mismatch = embedded_document
+            .iter()
+            .zip(derived.iter())
+            .position(|(expected, actual)| expected != actual)
+            .unwrap_or_else(|| embedded_document.len().min(derived.len()));
+
+        println!("Derived updater public key (public material only):");
+        println!("{encoded_public_key}");
+        eprintln!(
+            "TAURI_SIGNING_PRIVATE_KEY does not match src-tauri/tauri.conf.json.              The public key documents differ at byte {mismatch} (embedded length {}, derived length {}).              A matching key ID alone is not sufficient.",
+            embedded_document.len(),
+            derived.len()
+        );
+        process::exit(2);
+    }
+
+    println!("Updater private key matches the public key embedded in tauri.conf.json.");
     Ok(())
 }
