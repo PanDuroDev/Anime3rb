@@ -219,10 +219,12 @@ function CardGrid({ items, open }: { items: Card[]; open: (url: string) => void 
         <button className="card" key={item.url} type="button" onClick={() => open(item.url)}>
           <span className="poster">
             <Img src={item.image} />
-            {item.episode ? <span className="badge">EP {item.episode}</span> : null}
-          </span>
-          <span className="card-name" title={item.name}>
-            {item.name}
+            <span className="poster-caption">
+              {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+              <span className="card-name" title={item.name}>
+                {item.name}
+              </span>
+            </span>
           </span>
         </button>
       ))}
@@ -314,15 +316,17 @@ function Rail({
                 <button className="rail-card" type="button" onClick={() => open(item)}>
                   <span className="poster">
                     <Img src={item.image} />
-                    {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                    <span className="poster-caption">
+                      {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                      <span className="card-name" title={item.name}>
+                        {item.name}
+                      </span>
+                    </span>
                     {percent > 0 && (
                       <span className="pbar">
                         <i style={{ width: `${percent}%` }} />
                       </span>
                     )}
-                  </span>
-                  <span className="card-name" title={item.name}>
-                    {item.name}
                   </span>
                 </button>
                 {onRemove && (
