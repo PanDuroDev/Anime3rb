@@ -198,6 +198,11 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Verify Windows updater signatures
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: node scripts/verify-updater-signatures.mjs dist
+
       - name: Build updater manifest
         env:
           VERSION: ${{ steps.v.outputs.version }}
