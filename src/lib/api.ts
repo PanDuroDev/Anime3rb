@@ -3,7 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 export type Card = { name: string; url: string; image: string; episode?: number };
 export type Rail = { title: string; items: Card[] };
 export type Home = { rails: Rail[] };
-export type Episode = { number: number; name: string; url: string };
+export type FillerStatus = "filler" | "mixed" | "anime-canon" | "canon" | "disputed";
+export type FillerInfo = {
+  status: FillerStatus;
+  sources: string[];
+  sourceCount?: number;
+  note?: string;
+};
+export type Episode = { number: number; name: string; url: string; filler?: FillerInfo };
 export type Anime = {
   name: string;
   url: string;
