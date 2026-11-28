@@ -1123,7 +1123,23 @@ input { font: inherit; }
 
 .player.hide .chapters i { background: none !important; }
 .player.hide .pills { pointer-events: auto; }
-.player.hide .pill { background: transparent !important; color: var(--text); box-shadow: none !important; }
+
+/* Keep Skip / Next readable and tappable while the rest of the controls sleep. */
+.player.hide .controls .pills .pill {
+  color: var(--white) !important;
+  border-color: rgba(255, 255, 255, .2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .34) !important;
+}
+.player.hide .controls .pills .pill.skip {
+  background: linear-gradient(135deg, #3478f6, #245bd0) !important;
+  border-color: rgba(121, 170, 255, .58);
+}
+.player.hide .controls .pills .pill.next {
+  background: rgba(20, 22, 29, .9) !important;
+  border-color: rgba(255, 255, 255, .2);
+}
+.player.hide .controls .pills .pill svg { color: var(--white) !important; }
+
 .player.cursor-hidden,
 .player.cursor-hidden * { cursor: none !important; }
 
@@ -1163,20 +1179,36 @@ input { font: inherit; }
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
+  gap: 8px;
+  min-height: 36px;
   padding: 0 14px;
   overflow: hidden;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--text);
-  color: var(--bg);
-  font-size: 13px;
-  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 12px;
+  background: rgba(20, 22, 29, .88);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .015em;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform .15s ease, background .15s ease, border-color .15s ease;
 }
 
-.pill:hover { background: var(--white); }
-.pill svg { fill: currentColor; }
+.pill.skip {
+  background: linear-gradient(135deg, #3478f6, #245bd0);
+  border-color: rgba(121, 170, 255, .58);
+}
+
+.pill.next {
+  background: rgba(20, 22, 29, .88);
+  border-color: rgba(255, 255, 255, .2);
+}
+
+.pill:hover { transform: translateY(-1px); }
+.pill:active { transform: scale(.97); }
+.pill svg { flex: 0 0 auto; fill: currentColor; }
 .pill[hidden] { display: none; }
 
 .pill .thumb {

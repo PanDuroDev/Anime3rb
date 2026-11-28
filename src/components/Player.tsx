@@ -502,7 +502,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (latestLocked.current) return;
     pointerType.current = event.pointerType;
-    wake();
+    // Touch users should get the full control bar immediately; the 1.5s
+    // deferred reveal is only useful for hover-based desktop interaction.
+    wake(event.pointerType === "touch");
     if (event.pointerType !== "touch") return;
 
     const target = event.target as HTMLElement;

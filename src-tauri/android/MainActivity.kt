@@ -21,7 +21,7 @@ class MainActivity : TauriActivity() {
     playerFullscreen = savedInstanceState?.getBoolean(STATE_PLAYER_FULLSCREEN) ?: false
     playerControlsHidden = savedInstanceState?.getBoolean(STATE_PLAYER_CONTROLS_HIDDEN) ?: false
     if (playerFullscreen) {
-      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
 
     // Match the app's dark surface behind the status bar and keep its icons visible.
@@ -82,7 +82,7 @@ class MainActivity : TauriActivity() {
     runOnUiThread {
       if (playerFullscreen != fullscreen) {
         requestedOrientation = if (fullscreen) {
-          ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+          ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
           ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
