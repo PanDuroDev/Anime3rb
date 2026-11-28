@@ -127,15 +127,23 @@ export default function App() {
         )}
       </main>
       <footer className="source-credits">
-        Episode artwork: <a href="https://kitsu.io" target="_blank" rel="noreferrer">Kitsu</a>
-        {" · "}
-        <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
-        {" · "}
-        <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
-        {" · "}
-        <a href="https://anifillerpedia.wiki/docs/guide" target="_blank" rel="noreferrer">AniFillerPedia</a>
-        {" · "}
-        <a href="https://fillerlists.com/data" target="_blank" rel="noreferrer">FillerLists</a>
+        <div>
+          Episode artwork: <a href="https://kitsu.io" target="_blank" rel="noreferrer">Kitsu</a>
+          {" · "}
+          <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
+          {" · "}
+          <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
+        </div>
+        <div>
+          Episode classification: <a href="https://anifillerpedia.wiki/docs/guide" target="_blank" rel="noreferrer">AniFillerPedia</a>
+          {" ("}
+          <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noreferrer">CC BY-NC-SA 4.0</a>
+          {") · "}
+          <a href="https://fillerlists.com/data" target="_blank" rel="noreferrer">FillerLists</a>
+          {" ("}
+          <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>
+          {")"}
+        </div>
       </footer>
       <UpdateBanner />
     </div>
