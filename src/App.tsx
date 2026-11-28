@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Player from "./components/Player";
+import UpdateBanner from "./components/UpdateBanner";
 import { Icon } from "./components/Icon";
 import { Img } from "./components/Img";
 import {
@@ -117,6 +118,7 @@ export default function App() {
         {" · "}
         <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
       </footer>
+      <UpdateBanner />
     </div>
   );
 }

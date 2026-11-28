@@ -100,6 +100,9 @@ jobs:
 
       - run: npm ci
       - run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
@@ -107,7 +110,9 @@ jobs:
           name: Anime3rb-v${{ steps.app-version.outputs.version }}-Windows
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.sig
           if-no-files-found: error
           retention-days: 30
 
@@ -116,10 +121,18 @@ jobs:
     needs: prepare
     if: "!cancelled() && needs.prepare.result != 'failure'"
     runs-on: ubuntu-latest
+    env:
+      ANDROID_DEBUG_KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.tag || github.ref }}
+
+      - name: Use stable debug keystore
+        if: env.ANDROID_DEBUG_KEYSTORE != ''
+        run: |
+          mkdir -p ~/.android
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE" | base64 -d > ~/.android/debug.keystore
 
       - uses: actions/setup-node@v4
         with:
@@ -169,6 +182,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Resolve version
         id: v
         run: |
@@ -181,6 +196,12 @@ jobs:
           pattern: Anime3rb-v${{ steps.v.outputs.version }}-*
           path: dist
           merge-multiple: true
+
+      - name: Build updater manifest
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: node scripts/latest-json.mjs
 
       - uses: softprops/action-gh-release@v2
         with:
