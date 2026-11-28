@@ -38,7 +38,7 @@ const normalizeEpisodeNumberQuery = (query: string) =>
 const episodeTitle = (name: string, number: number) =>
   name.replace(new RegExp(`^الحلقة\\s*${number}\\s*[-–—:]?\\s*`), "").trim();
 
-const EPISODES_PER_PAGE = 24;
+const EPISODES_PER_PAGE = 25;
 const WATCH_SIDEBAR_PAGE_SIZE = 24;
 
 const FILLER_LABELS: Record<import("./lib/api").FillerStatus, string> = {
@@ -129,25 +129,6 @@ export default function App() {
           />
         )}
       </main>
-      <footer className="source-credits">
-        <div>
-          Episode artwork: <a href="https://kitsu.io" target="_blank" rel="noreferrer">Kitsu</a>
-          {" · "}
-          <a href="https://api.ani.zip" target="_blank" rel="noreferrer">AniZip</a>
-          {" · "}
-          <a href="https://nogitsu.com" target="_blank" rel="noreferrer">Nogitsu</a>
-        </div>
-        <div>
-          Episode classification: <a href="https://anifillerpedia.wiki/docs/guide" target="_blank" rel="noreferrer">AniFillerPedia</a>
-          {" ("}
-          <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noreferrer">CC BY-NC-SA 4.0</a>
-          {") · "}
-          <a href="https://fillerlists.com/data" target="_blank" rel="noreferrer">FillerLists</a>
-          {" ("}
-          <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>
-          {")"}
-        </div>
-      </footer>
       <UpdateBanner />
     </div>
   );
@@ -238,10 +219,12 @@ function CardGrid({ items, open }: { items: Card[]; open: (url: string) => void 
         <button className="card" key={item.url} type="button" onClick={() => open(item.url)}>
           <span className="poster">
             <Img src={item.image} />
-            {item.episode ? <span className="badge">EP {item.episode}</span> : null}
-          </span>
-          <span className="card-name" title={item.name}>
-            {item.name}
+            <span className="poster-caption">
+              {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+              <span className="card-name" title={item.name}>
+                {item.name}
+              </span>
+            </span>
           </span>
         </button>
       ))}
@@ -298,19 +281,32 @@ function Rail({
 
   return (
     <section className="rail">
-      <div className="section-head">
+      <div className="section-head rail-head">
         <h2>{title}</h2>
+        <div className="rail-controls" aria-label={`Scroll ${title} anime`}>
+          <button
+            className="rail-arrow start"
+            type="button"
+            aria-label="Scroll left"
+            title="Scroll left"
+            disabled={edges.start}
+            onClick={() => page(-1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+          <button
+            className="rail-arrow end"
+            type="button"
+            aria-label="Scroll right"
+            title="Scroll right"
+            disabled={edges.end}
+            onClick={() => page(1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+        </div>
       </div>
       <div className="rail-wrap">
-        <button
-          className="rail-arrow start"
-          type="button"
-          aria-label="Scroll left"
-          disabled={edges.start}
-          onClick={() => page(-1)}
-        >
-          <Icon name="arrowRight" size={18} />
-        </button>
         <div className="rail-scroll" ref={scroller} onScroll={measure}>
           {items.map((item) => {
             const seen = progress?.get(item.url);
@@ -320,15 +316,17 @@ function Rail({
                 <button className="rail-card" type="button" onClick={() => open(item)}>
                   <span className="poster">
                     <Img src={item.image} />
-                    {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                    <span className="poster-caption">
+                      {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                      <span className="card-name" title={item.name}>
+                        {item.name}
+                      </span>
+                    </span>
                     {percent > 0 && (
                       <span className="pbar">
                         <i style={{ width: `${percent}%` }} />
                       </span>
                     )}
-                  </span>
-                  <span className="card-name" title={item.name}>
-                    {item.name}
                   </span>
                 </button>
                 {onRemove && (
@@ -346,15 +344,6 @@ function Rail({
             );
           })}
         </div>
-        <button
-          className="rail-arrow end"
-          type="button"
-          aria-label="Scroll right"
-          disabled={edges.end}
-          onClick={() => page(1)}
-        >
-          <Icon name="arrowRight" size={18} />
-        </button>
       </div>
     </section>
   );
@@ -458,8 +447,30 @@ function BrowseView({
 
   return (
     <section className="results">
-      <div className="section-head">
+      <div className="section-head browse-head">
         <h2>All anime</h2>
+        <div className="rail-controls" aria-label="Browse pages">
+          <button
+            className="rail-arrow start"
+            type="button"
+            aria-label="Previous page"
+            title="Previous page"
+            disabled={page <= 1}
+            onClick={() => onPage(page - 1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+          <button
+            className="rail-arrow end"
+            type="button"
+            aria-label="Next page"
+            title="Next page"
+            disabled={!items?.length}
+            onClick={() => onPage(page + 1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+        </div>
         <span className="count">Page {page}</span>
       </div>
       {!items ? (
@@ -469,14 +480,6 @@ function BrowseView({
       ) : (
         <div className="empty-state compact"><h2>No more titles</h2><p>There are no additional results on this page.</p></div>
       )}
-      <div className="pager">
-        <button className="ghost" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          Previous
-        </button>
-        <button className="ghost" type="button" disabled={!items?.length} onClick={() => onPage(page + 1)}>
-          Next
-        </button>
-      </div>
     </section>
   );
 }
@@ -625,9 +628,16 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
             >
               <Icon name="arrowRight" size={18} />
             </button>
-            <span aria-live="polite">
-              Showing {firstVisible}–{lastVisible} of {filteredEpisodes.length} episodes
-              <span className="episode-page-number"> · Page {activePage} of {pageCount}</span>
+            <span className="episode-pagination-info" aria-live="polite">
+              <span
+                className="episode-range"
+                aria-label={`Episodes ${firstVisible} to ${lastVisible} of ${filteredEpisodes.length}`}
+              >
+                {firstVisible}–{lastVisible} / {filteredEpisodes.length}
+              </span>
+              <span className="episode-page-number" aria-label={`Page ${activePage} of ${pageCount}`}>
+                {activePage} / {pageCount}
+              </span>
             </span>
             <button
               className="ghost episode-page-arrow"
