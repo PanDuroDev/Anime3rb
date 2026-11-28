@@ -121,10 +121,18 @@ jobs:
     needs: prepare
     if: "!cancelled() && needs.prepare.result != 'failure'"
     runs-on: ubuntu-latest
+    env:
+      ANDROID_DEBUG_KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.tag || github.ref }}
+
+      - name: Use stable debug keystore
+        if: env.ANDROID_DEBUG_KEYSTORE != ''
+        run: |
+          mkdir -p ~/.android
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE" | base64 -d > ~/.android/debug.keystore
 
       - uses: actions/setup-node@v4
         with:

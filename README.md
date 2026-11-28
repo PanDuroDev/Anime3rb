@@ -105,6 +105,10 @@ the private key and password are the `TAURI_SIGNING_PRIVATE_KEY` and
 two variables, otherwise bundling fails. `scripts/latest-json.mjs` builds the manifest the release
 job attaches.
 
+The CI APKs use a fixed debug keystore from the `ANDROID_DEBUG_KEYSTORE` secret (base64 PKCS12 with
+the standard `androiddebugkey` alias), so a new APK installs over the previous one instead of
+failing the signature check.
+
 ## Notes
 
 - Personal, unofficial project. Not affiliated with Anime3rb or HackerTube.
