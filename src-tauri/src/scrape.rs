@@ -1066,9 +1066,13 @@ pub async fn episode(app: AppHandle, url: String) -> Result<EpisodeData, String>
     let player_url = extract_episode_player_url(&html)
         .ok_or_else(|| "This episode has no player".to_string())?;
 
-    // Source extraction must still run in the browser when the plain HTTP request is blocked.
+    // Some player responses already contain the populated source array. Use it first to
+    // avoid opening a capture WebView when the server-rendered page has everything we need.
     let page = get(&player_url).await.unwrap_or_default();
-    let parsed = browser_sources(&app, &player_url).await?;
+    let parsed = match extract_video_sources_from_page(&page) {
+        Some(sources) => sources,
+        None => browser_sources(&app, &player_url).await?,
+    };
     let sources = parsed
         .iter()
         .filter_map(|item| {
@@ -1112,7 +1116,9 @@ const SOURCE_HOOK: &str = r#"(function () {
     sending = true;
     fetch("http://127.0.0.1:__PORT__/capture", {
       method: "POST",
+      mode: "cors",
       cache: "no-store",
+      targetAddressSpace: "loopback",
       body: text
     }).then(function () {
       captured = true;
@@ -1254,6 +1260,9 @@ const SOURCE_HOOK: &str = r#"(function () {
     } catch (e) {}
   };
   checkExistingSources();
+  // Android can inject initialization scripts after remote-page scripts have run.
+  // Keep checking the page's populated global array so a missed XHR/fetch is recoverable.
+  setInterval(checkExistingSources, 300);
 
   // Prevent a player preview from producing audio in either capture window.
   document.addEventListener("play", function (event) {
@@ -1381,6 +1390,56 @@ fn parse_video_sources(body: &str) -> Result<Vec<Value>, String> {
         return Err("The player returned no usable video sources".to_string());
     }
     Ok(sources)
+}
+
+/// Read a populated video_sources assignment from the player HTML without relying on
+/// a WebView. Parse balanced brackets so nested arrays and quoted brackets are safe.
+fn extract_video_sources_from_page(page: &str) -> Option<Vec<Value>> {
+    let assignment = regex::Regex::new(r"\\bvideo_sources\\s*=\\s*\\[").ok()?;
+    let bytes = page.as_bytes();
+    let mut best: Option<Vec<Value>> = None;
+
+    for matched in assignment.find_iter(page) {
+        let start = matched.end().checked_sub(1)?;
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+
+        for index in start..bytes.len() {
+            let byte = bytes[index];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if byte == b'\\\\' {
+                    escaped = true;
+                } else if byte == b'"' {
+                    in_string = false;
+                }
+                continue;
+            }
+
+            match byte {
+                b'"' => in_string = true,
+                b'[' => depth += 1,
+                b']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        if let Ok(sources) = parse_video_sources(&page[start..=index]) {
+                            if !sources.is_empty()
+                                && best.as_ref().is_none_or(|current| sources.len() > current.len())
+                            {
+                                best = Some(sources);
+                            }
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    best
 }
 
 async fn browser_sources_once(
@@ -1703,5 +1762,55 @@ mod external_artwork_tests {
         ));
         assert!(!super::valid_episode_artwork_url("https://evil.example/still.jpg"));
         assert!(!super::valid_episode_artwork_url("http://image.tmdb.org/still.jpg"));
+    }
+}
+
+
+#[cfg(test)]
+mod player_page_source_tests {
+    use serde_json::json;
+
+    #[test]
+    fn prefers_the_largest_populated_source_assignment() {
+        let page = r#"<script>
+            var video_sources = [];
+            video_sources = [
+                {"label":"720p","res":"720","src":"https://video.example/720.m3u8"},
+                {"label":"1080p","res":"1080","src":"https://video.example/1080.m3u8"}
+            ];
+        </script>"#;
+
+        let sources = super::extract_video_sources_from_page(page).unwrap();
+        assert_eq!(sources.len(), 2);
+        assert_eq!(super::s(sources[1].get("res")), "1080");
+    }
+
+    #[test]
+    fn parses_nested_arrays_and_ignores_brackets_inside_source_urls() {
+        let page = r#"<script>
+            video_sources = [{
+                "label":"720p",
+                "res":"720",
+                "metadata":{"tracks":["one","two"]},
+                "src":"https://video.example/episode[1].m3u8"
+            }];
+        </script>"#;
+
+        let sources = super::extract_video_sources_from_page(page).unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(super::s(sources[0].get("res")), "720");
+    }
+
+    #[test]
+    fn ignores_empty_or_invalid_player_assignments() {
+        assert!(super::extract_video_sources_from_page(
+            "video_sources = []; video_sources = not_json;"
+        ).is_none());
+
+        let page = format!(
+            "video_sources = {};",
+            json!([{"label":"missing src","res":"720"}])
+        );
+        assert!(super::extract_video_sources_from_page(&page).is_none());
     }
 }
