@@ -529,6 +529,7 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
                 key={item.number}
                 animeUrl={url}
                 animeName={data.name}
+                fallbackImage={data.image}
                 item={item}
                 current={false}
                 progress={seen.get(item.url)}
@@ -662,6 +663,7 @@ function WatchView({
                 key={item.number}
                 animeUrl={url}
                 animeName={data.name}
+                fallbackImage={data.image}
                 item={item}
                 current={item.number === current.number}
                 progress={seen.get(item.url)}
@@ -734,19 +736,23 @@ function EpisodeArtwork({
   animeUrl,
   animeName,
   episodeNumber,
+  fallbackImage,
   root,
 }: {
   animeUrl: string;
   animeName: string;
   episodeNumber: number;
+  fallbackImage: string;
   root?: Element | null;
 }) {
   const target = useRef<HTMLSpanElement>(null);
   const [image, setImage] = useState("");
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setImage("");
+    setImageLoaded(false);
     setFailed(false);
     const node = target.current;
     if (!node) return;
@@ -770,16 +776,32 @@ function EpisodeArtwork({
     };
   }, [animeUrl, animeName, episodeNumber, root]);
 
-  if (!image || failed) {
-    return <span ref={target} className="image-placeholder" aria-hidden="true" />;
-  }
-
-  return <img src={image} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+  return (
+    <span ref={target} className="ep-artwork" aria-hidden="true">
+      <Img src={fallbackImage} className="ep-artwork-fallback" />
+      {image && !failed && (
+        <img
+          className={`ep-artwork-image${imageLoaded ? " is-loaded" : ""}`}
+          src={image}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setImageLoaded(true)}
+          onError={() => {
+            setImageLoaded(false);
+            setFailed(true);
+            setImage("");
+          }}
+        />
+      )}
+    </span>
+  );
 }
 
 function EpisodeCard({
   animeUrl,
   animeName,
+  fallbackImage,
   item,
   current,
   progress,
@@ -789,6 +811,7 @@ function EpisodeCard({
 }: {
   animeUrl: string;
   animeName: string;
+  fallbackImage: string;
   item: Episode;
   current: boolean;
   progress?: Progress;
@@ -810,6 +833,7 @@ function EpisodeCard({
           animeUrl={animeUrl}
           animeName={animeName}
           episodeNumber={item.number}
+          fallbackImage={fallbackImage}
           root={thumbnailRoot}
         />
         {percent > 0 && (
