@@ -602,7 +602,7 @@ function WatchView({
   const filteredEpisodes = useMemo(() => {
     const query = normalizeEpisodeNumberQuery(episodeQuery);
     if (!query) return data?.episodes ?? [];
-    if (!/^\\d+$/.test(query)) return [];
+    if (!/^\d+$/.test(query)) return [];
     return (data?.episodes ?? []).filter((item) => String(item.number).includes(query));
   }, [data, episodeQuery]);
 
