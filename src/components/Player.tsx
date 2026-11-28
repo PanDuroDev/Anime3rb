@@ -540,7 +540,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   return (
     <div
       ref={wrap}
-      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${cursorHidden ? " cursor-hidden" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
+      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${cursorHidden ? " cursor-hidden" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${menu ? " has-open-menu" : ""}${locked ? " is-locked" : ""}`}
       tabIndex={-1}
       onFocusCapture={() => wake()}
       onPointerDown={handlePointerDown}
