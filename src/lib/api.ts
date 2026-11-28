@@ -243,13 +243,35 @@ export type Progress = { url: string; name: string; anime: string; image: string
 
 const KEY = "a3:progress";
 
-let progressCache: Progress[] | null = null;
+let progressCache: Progress[] = [];
+let progressCacheLoaded = false;
+
+const isProgressEntry = (value: unknown): value is Progress => {
+  if (typeof value !== "object" || value === null) return false;
+  const entry = value as Partial<Progress>;
+  return (
+    typeof entry.url === "string" &&
+    typeof entry.name === "string" &&
+    typeof entry.anime === "string" &&
+    typeof entry.image === "string" &&
+    typeof entry.time === "number" &&
+    Number.isFinite(entry.time) &&
+    typeof entry.duration === "number" &&
+    Number.isFinite(entry.duration) &&
+    typeof entry.at === "number" &&
+    Number.isFinite(entry.at)
+  );
+};
 
 export const readProgress = (): Progress[] => {
-  if (progressCache) return progressCache;
+  if (progressCacheLoaded) return progressCache;
+
+  progressCacheLoaded = true;
   try {
-    progressCache = JSON.parse(localStorage.getItem(KEY) || "[]");
+    const stored: unknown = JSON.parse(localStorage.getItem(KEY) || "[]");
+    progressCache = Array.isArray(stored) ? stored.filter(isProgressEntry) : [];
   } catch {
+    // Storage may be unavailable or contain invalid JSON.
     progressCache = [];
   }
   return progressCache;
