@@ -215,4 +215,9 @@ export const saveProgress = (entry: Progress) => {
   localStorage.setItem(KEY, JSON.stringify(list.slice(0, 30)));
 };
 
+export const removeProgress = (url: string) => {
+  const list = readProgress().filter((item) => item.url !== url);
+  localStorage.setItem(KEY, JSON.stringify(list));
+};
+
 export const progressFor = (url: string) => readProgress().find((item) => item.url === url)?.time || 0;

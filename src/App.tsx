@@ -14,6 +14,7 @@ import {
   browse,
   home as fetchHome,
   readProgress,
+  removeProgress,
   search as searchTitles,
 } from "./lib/api";
 
@@ -26,6 +27,11 @@ type View =
 
 const animeUrlFor = (episodeUrl: string) => episodeUrl.replace("/episode/", "/titles/").replace(/\/[^/]+$/, "");
 const episodeNumber = (url: string) => Number(url.split("/").pop() || 0);
+const normalizeEpisodeNumberQuery = (query: string) =>
+  query
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
+    .trim();
 
 /** "الحلقة 1071 - قمة لوفي" reads better as just "قمة لوفي" next to the episode label. */
 const episodeTitle = (name: string, number: number) =>
@@ -225,11 +231,13 @@ function Rail({
   items,
   open,
   progress,
+  onRemove,
 }: {
   title: string;
   items: Card[];
   open: (item: Card) => void;
   progress?: Map<string, Progress>;
+  onRemove?: (item: Card) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ start: true, end: false });
@@ -284,20 +292,33 @@ function Rail({
             const seen = progress?.get(item.url);
             const percent = seen && seen.duration ? Math.min(100, (seen.time / seen.duration) * 100) : 0;
             return (
-              <button className="rail-card" key={item.url} type="button" onClick={() => open(item)}>
-                <span className="poster">
-                  <Img src={item.image} />
-                  {item.episode ? <span className="badge">EP {item.episode}</span> : null}
-                  {percent > 0 && (
-                    <span className="pbar">
-                      <i style={{ width: `${percent}%` }} />
-                    </span>
-                  )}
-                </span>
-                <span className="card-name" title={item.name}>
-                  {item.name}
-                </span>
-              </button>
+              <div className="rail-item" key={item.url}>
+                <button className="rail-card" type="button" onClick={() => open(item)}>
+                  <span className="poster">
+                    <Img src={item.image} />
+                    {item.episode ? <span className="badge">EP {item.episode}</span> : null}
+                    {percent > 0 && (
+                      <span className="pbar">
+                        <i style={{ width: `${percent}%` }} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="card-name" title={item.name}>
+                    {item.name}
+                  </span>
+                </button>
+                {onRemove && (
+                  <button
+                    className="rail-remove"
+                    type="button"
+                    aria-label={`Remove ${item.name} from Continue watching`}
+                    title="Remove from Continue watching"
+                    onClick={() => onRemove(item)}
+                  >
+                    <Icon name="delete" size={18} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -318,11 +339,14 @@ function Rail({
 function HomeView({ open, resume }: { open: (url: string) => void; resume: (url: string, play: number) => void }) {
   const [data, setData] = useState<Home | null>(null);
   const [error, setError] = useState("");
-  const history = useMemo<Progress[]>(
-    () => readProgress().filter((item) => item.time > 5 && !(item.duration > 0 && item.time / item.duration >= 0.92)),
-    []
+  const [history, setHistory] = useState<Progress[]>(() =>
+    readProgress().filter((item) => item.time > 5 && !(item.duration > 0 && item.time / item.duration >= 0.92))
   );
   const seen = useMemo(() => new Map(history.map((item) => [item.url, item])), [history]);
+  const removeFromHistory = (item: Card) => {
+    removeProgress(item.url);
+    setHistory((current) => current.filter((entry) => entry.url !== item.url));
+  };
   const watching = useMemo<Card[]>(
     () =>
       history.map((item) => ({
@@ -351,6 +375,7 @@ function HomeView({ open, resume }: { open: (url: string) => void; resume: (url:
           items={watching}
           progress={seen}
           open={(item) => resume(animeUrlFor(item.url), episodeNumber(item.url))}
+          onRemove={removeFromHistory}
         />
       )}
       {data.rails.map((rail) => (
@@ -592,11 +617,20 @@ function WatchView({
   const [data, setData] = useState<Anime | null>(null);
   const [error, setError] = useState("");
   const [side, setSide] = useState<HTMLDivElement | null>(null);
+  const [episodeQuery, setEpisodeQuery] = useState("");
+
+  const filteredEpisodes = useMemo(() => {
+    const query = normalizeEpisodeNumberQuery(episodeQuery);
+    if (!query) return data?.episodes ?? [];
+    if (!/^\d+$/.test(query)) return [];
+    return (data?.episodes ?? []).filter((item) => String(item.number).includes(query));
+  }, [data, episodeQuery]);
 
   useEffect(() => {
     let live = true;
     setData(null);
     setError("");
+    setEpisodeQuery("");
     fetchAnime(url)
       .then((result) => live && setData(result))
       .catch((reason) => live && setError(String(reason)));
@@ -607,9 +641,12 @@ function WatchView({
 
   // Keep the active episode visible in the sidebar without scrolling the page.
   useEffect(() => {
-    const card = side?.querySelector<HTMLElement>(".is-current");
-    if (side && card) side.scrollTop = card.offsetTop - side.clientHeight / 2 + card.clientHeight / 2;
-  }, [number, data, side]);
+    if (!side) return;
+    const card = side.querySelector<HTMLElement>(".is-current");
+    side.scrollTop = card
+      ? card.offsetTop - side.clientHeight / 2 + card.clientHeight / 2
+      : 0;
+  }, [number, data, side, filteredEpisodes]);
 
   const seen = useMemo(() => new Map(readProgress().map((item) => [item.url, item])), [data, number]);
 
@@ -658,9 +695,19 @@ function WatchView({
           <div className="section-head">
             <h2>Episodes</h2>
             <span className="count">{data.episodes.length}</span>
+            <label className="side-episode-search">
+              <input
+                type="search"
+                inputMode="numeric"
+                value={episodeQuery}
+                onChange={(event) => setEpisodeQuery(event.currentTarget.value)}
+                placeholder="Episode #"
+                aria-label="Search episodes by number"
+              />
+            </label>
           </div>
           <div className="side-list" ref={setSide}>
-            {data.episodes.map((item) => (
+            {filteredEpisodes.length ? filteredEpisodes.map((item) => (
               <EpisodeCard
                 key={item.number}
                 animeUrl={url}
@@ -673,7 +720,11 @@ function WatchView({
                 layout="sidebar"
                 thumbnailRoot={side}
               />
-            ))}
+            )) : (
+              <div className="side-episode-empty" role="status">
+                No episodes found
+              </div>
+            )}
           </div>
         </aside>
       </div>

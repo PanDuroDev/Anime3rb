@@ -248,6 +248,8 @@ input { font: inherit; }
   display: flex;
   gap: 14px;
   overflow-x: auto;
+  /* Reserve room inside the horizontal scrollport for the card's hover lift and outline. */
+  padding-top: 6px;
   padding-bottom: 8px;
   scrollbar-width: none;
   scroll-behavior: smooth;
@@ -288,6 +290,49 @@ input { font: inherit; }
 }
 
 .rail-card { flex: 0 0 152px; width: 152px; min-width: 0; }
+
+.rail-item {
+  position: relative;
+  flex: 0 0 152px;
+  width: 152px;
+  min-width: 0;
+}
+
+.rail-item .rail-card {
+  flex: none;
+  width: 100%;
+}
+
+.rail-remove {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .78);
+  color: var(--white);
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+  transition: opacity .15s ease, background .15s ease, border-color .15s ease;
+}
+
+.rail-item:hover .rail-remove,
+.rail-item:focus-within .rail-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rail-remove:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+}
 
 .poster {
   position: relative;
@@ -747,7 +792,46 @@ input { font: inherit; }
   background: var(--surface);
 }
 
-.watch-side > .section-head { margin: 0; padding: 12px; border-bottom: 1px solid var(--line); }
+.watch-side > .section-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.side-episode-search {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+
+.side-episode-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.side-episode-search input::placeholder { color: var(--muted); }
+.side-episode-search input:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+
+.side-episode-empty {
+  padding: 24px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
 
 .side-list {
   display: grid;
@@ -1382,7 +1466,7 @@ input { font: inherit; }
   }
   .searchbox { grid-column: 1 / -1; max-width: none; order: 3; }
   .topnav { grid-column: 2; grid-row: 1; }
-  .rail-card { flex-basis: 128px; }
+  .rail-item { flex-basis: 128px; width: 128px; }
   /* Keep shelf controls reachable on touch screens without covering poster artwork. */
   .rail-arrow {
     top: -42px;
@@ -1426,6 +1510,8 @@ input { font: inherit; }
 }
 
 @media (hover: none), (pointer: coarse) {
+  .rail-remove { opacity: 1; pointer-events: auto; }
+
   .ep-card.is-grid .ep-text,
   .ep-card.is-sidebar .ep-text { opacity: 1; transform: none; }
   .ep-card.is-grid::after,
