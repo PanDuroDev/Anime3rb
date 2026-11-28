@@ -14,6 +14,14 @@ import {
 } from "../lib/api";
 import { Icon } from "./Icon";
 
+declare global {
+  interface Window {
+    Anime3rbAndroid?: {
+      setPlayerUiState: (fullscreen: boolean, controlsHidden: boolean) => void;
+    };
+  }
+}
+
 type Props = {
   url: string;
   animeName: string;
@@ -423,6 +431,16 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     const onFull = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", onFull);
     return () => document.removeEventListener("fullscreenchange", onFull);
+  }, []);
+
+  // Keep Android's native orientation and status bar in sync with player state.
+  // The bridge is only injected by the Android app; browser and desktop builds ignore it.
+  useEffect(() => {
+    window.Anime3rbAndroid?.setPlayerUiState(fullscreen, fullscreen && hidden);
+  }, [fullscreen, hidden]);
+
+  useEffect(() => () => {
+    window.Anime3rbAndroid?.setPlayerUiState(false, false);
   }, []);
 
   useEffect(() => {
