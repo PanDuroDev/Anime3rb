@@ -532,10 +532,9 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
     if (touchGesture.current?.pointerId === event.pointerId) touchGesture.current = null;
   };
 
-  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    handlePointerEnd(event);
-    wrap.current?.focus({ preventScroll: true });
-  };
+  // Do not force focus onto the entire player after a touch.
+  // The window-level keyboard handler already supports player shortcuts,
+  // and focusing this large container triggers Android WebView focus feedback.
 
   return (
     <div
@@ -545,7 +544,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
       onFocusCapture={() => wake()}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
+      onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
     >
       <video
