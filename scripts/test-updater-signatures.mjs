@@ -6,7 +6,7 @@ const { publicKey: generatedPublicKey, privateKey } = generateKeyPairSync("ed255
 const publicKeyDer = generatedPublicKey.export({ format: "der", type: "spki" });
 const keyId = randomBytes(8);
 const publicKeyBytes = Buffer.concat([
-  Buffer.from([0x45, 0x64]),
+  Buffer.from([0x45, 0x44]),
   keyId,
   publicKeyDer.subarray(-32),
 ]);
