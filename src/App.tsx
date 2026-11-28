@@ -298,19 +298,32 @@ function Rail({
 
   return (
     <section className="rail">
-      <div className="section-head">
+      <div className="section-head rail-head">
         <h2>{title}</h2>
+        <div className="rail-controls" aria-label={`Scroll ${title} anime`}>
+          <button
+            className="rail-arrow start"
+            type="button"
+            aria-label="Scroll left"
+            title="Scroll left"
+            disabled={edges.start}
+            onClick={() => page(-1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+          <button
+            className="rail-arrow end"
+            type="button"
+            aria-label="Scroll right"
+            title="Scroll right"
+            disabled={edges.end}
+            onClick={() => page(1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+        </div>
       </div>
       <div className="rail-wrap">
-        <button
-          className="rail-arrow start"
-          type="button"
-          aria-label="Scroll left"
-          disabled={edges.start}
-          onClick={() => page(-1)}
-        >
-          <Icon name="arrowRight" size={18} />
-        </button>
         <div className="rail-scroll" ref={scroller} onScroll={measure}>
           {items.map((item) => {
             const seen = progress?.get(item.url);
@@ -346,15 +359,6 @@ function Rail({
             );
           })}
         </div>
-        <button
-          className="rail-arrow end"
-          type="button"
-          aria-label="Scroll right"
-          disabled={edges.end}
-          onClick={() => page(1)}
-        >
-          <Icon name="arrowRight" size={18} />
-        </button>
       </div>
     </section>
   );
@@ -458,8 +462,30 @@ function BrowseView({
 
   return (
     <section className="results">
-      <div className="section-head">
+      <div className="section-head browse-head">
         <h2>All anime</h2>
+        <div className="rail-controls" aria-label="Browse pages">
+          <button
+            className="rail-arrow start"
+            type="button"
+            aria-label="Previous page"
+            title="Previous page"
+            disabled={page <= 1}
+            onClick={() => onPage(page - 1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+          <button
+            className="rail-arrow end"
+            type="button"
+            aria-label="Next page"
+            title="Next page"
+            disabled={!items?.length}
+            onClick={() => onPage(page + 1)}
+          >
+            <Icon name="arrowRight" size={18} />
+          </button>
+        </div>
         <span className="count">Page {page}</span>
       </div>
       {!items ? (
@@ -469,14 +495,6 @@ function BrowseView({
       ) : (
         <div className="empty-state compact"><h2>No more titles</h2><p>There are no additional results on this page.</p></div>
       )}
-      <div className="pager">
-        <button className="ghost" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          Previous
-        </button>
-        <button className="ghost" type="button" disabled={!items?.length} onClick={() => onPage(page + 1)}>
-          Next
-        </button>
-      </div>
     </section>
   );
 }
