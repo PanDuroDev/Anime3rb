@@ -540,7 +540,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
   return (
     <div
       ref={wrap}
-      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${cursorHidden ? " cursor-hidden" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${locked ? " is-locked" : ""}`}
+      className={`player${playing ? " is-playing" : ""}${hidden ? " hide" : ""}${cursorHidden ? " cursor-hidden" : ""}${buffering ? " is-buffering" : ""}${theater ? " theater" : ""}${menu ? " has-open-menu" : ""}${locked ? " is-locked" : ""}`}
       tabIndex={-1}
       onFocusCapture={() => wake()}
       onPointerDown={handlePointerDown}
@@ -705,7 +705,7 @@ export default function Player({ url, animeName, animeImage, episode, next, onNe
           </span>
           <span className="grow" />
           <button
-            className="btn"
+            className="btn theater-toggle"
             type="button"
             onClick={() => setTheater(!theater)}
             aria-label="Theater mode"

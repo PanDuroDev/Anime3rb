@@ -823,12 +823,16 @@ input { font: inherit; }
 .player {
   position: relative;
   aspect-ratio: 16 / 9;
-  overflow: hidden;
+  /* Menus and seek-preview frames must be able to extend beyond the video frame. */
+  overflow: visible;
   border-radius: 0;
   background: var(--black);
   cursor: pointer;
   user-select: none;
 }
+
+/* Keep the open quality menu above nearby page content while it escapes the player. */
+.player.has-open-menu { z-index: 20; }
 
 /* Keep the video edge-to-edge in both inline playback and browser fullscreen. */
 .player:fullscreen,
@@ -1399,6 +1403,52 @@ input { font: inherit; }
   .player .pill.next .thumb { display: block; }
 }
 
+/* Compact phone layout: keep the entire control row on one line. */
+@media (max-width: 600px) {
+  .player .controls { gap: 0; padding: 14px 6px 5px; }
+  .player .row { flex-wrap: nowrap; gap: 0; width: 100%; }
+  .player .btn {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+  }
+  .player .btn svg { width: 17px; height: 17px; }
+  .player .theater-toggle,
+  .player .time { display: none; }
+  .player .grow { flex: 1 1 0; min-width: 0; }
+  .player .volume-wrap { flex: 0 0 auto; }
+  .player .volume-wrap .volume {
+    flex: 0 0 36px;
+    width: 36px;
+    min-width: 0;
+    height: 14px;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .player .panel {
+    bottom: calc(100% + 10px);
+    max-width: min(260px, calc(100vw - 24px));
+    max-height: min(45vh, 320px);
+    padding: 6px;
+  }
+  .player .panel-label { padding: 6px 8px 4px; font-size: 10px; }
+  .player .option { min-height: 32px; padding: 5px 8px; font-size: 12px; }
+  .player .pill { min-height: 30px; padding-inline: 10px; font-size: 12px; }
+  .player .seek { height: 14px; }
+}
+
+@media (max-width: 360px) {
+  .player .btn {
+    flex-basis: 26px;
+    width: 26px;
+    height: 26px;
+  }
+  .player .btn svg { width: 16px; height: 16px; }
+  .player .volume-wrap .volume { flex-basis: 30px; width: 30px; }
+}
+
+/* Respect reduced-motion preferences. */
 @media (prefers-reduced-motion: reduce) {
   .image-placeholder, .skeleton-poster, .skeleton-line, .skeleton-heading, .skeleton-detail-poster, .skeleton-meta, .skeleton-copy, .skeleton-action, .episode-skeleton i, .episode-skeleton span, .episode-grid-skeleton, .watch-player-skeleton { animation: none; }
   .ep-card.is-grid::after,
