@@ -27,6 +27,8 @@ type Release = {
 
 export async function findUpdate(): Promise<PendingUpdate | null> {
   if (ANDROID) return androidUpdate();
+  // Releases currently provide Windows installers only; avoid broken checks on other desktops.
+  if (!WINDOWS) return null;
 
   const update = await check();
   if (!update) return null;
