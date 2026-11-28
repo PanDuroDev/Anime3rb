@@ -248,6 +248,7 @@ input { font: inherit; }
   display: flex;
   gap: 14px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 8px;
   scrollbar-width: none;
   scroll-behavior: smooth;
@@ -376,6 +377,7 @@ input { font: inherit; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
   gap: 20px 16px;
+  overflow: hidden;
 }
 
 .skeleton-grid { pointer-events: none; }
