@@ -94,16 +94,14 @@ for (const suffix of [".exe.sig", ".msi.sig"]) {
     throw new Error(`Trusted comment signature is invalid: ${basename(signaturePath)}`);
   }
 
-  if (version) {
-    const signedVersion = trustedComment
-      .split("\t")
-      .find((part) => part.startsWith("version:"))
-      ?.slice("version:".length);
-    if (signedVersion !== version) {
-      throw new Error(
-        `${basename(artifactPath)} is signed for ${signedVersion ?? "no version"}, expected ${version}`,
-      );
-    }
+  const signedVersion = trustedComment
+    .split("\t")
+    .find((part) => part.startsWith("version:"))
+    ?.slice("version:".length);
+  if (signedVersion !== version) {
+    throw new Error(
+      `${basename(artifactPath)} is signed for ${signedVersion ?? "no version"}, expected ${version}`,
+    );
   }
 
   console.log(`Verified ${basename(artifactPath)} using the embedded updater public key`);
