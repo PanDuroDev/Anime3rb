@@ -8,6 +8,46 @@ const requests = new Map<string, Promise<string>>();
 const posterTargets = new Map<Element, () => void>();
 let posterObserver: IntersectionObserver | null = null;
 
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+async function loadImage(src: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const data = await invoke<string>("image", { url: src });
+      // A proxy can occasionally return an HTML error page with HTTP 200.
+      if (!data.startsWith("data:image/")) {
+        throw new Error("The image server returned an invalid image.");
+      }
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await wait(350);
+    }
+  }
+  throw lastError;
+}
+
+function requestImage(src: string) {
+  const pending = requests.get(src);
+  if (pending) return pending;
+
+  const request = loadImage(src)
+    .then((data) => {
+      if (cache.size >= 500) {
+        const oldest = cache.keys().next().value;
+        if (oldest) cache.delete(oldest);
+      }
+      cache.set(src, data);
+      return data;
+    })
+    .finally(() => requests.delete(src));
+
+  requests.set(src, request);
+  return request;
+}
+
 function observePoster(target: Element, onVisible: () => void) {
   if (typeof IntersectionObserver === "undefined") {
     onVisible();
@@ -47,65 +87,75 @@ function observePoster(target: Element, onVisible: () => void) {
   };
 }
 
-export function useImage(src?: string, target?: Element | null) {
-  const [url, setUrl] = useState(() => (src ? cache.get(src) : undefined));
+export function useImage(src?: string, target?: Element | null, retry = 0) {
+  const [result, setResult] = useState<{ url?: string; failed: boolean }>(() => ({
+    url: src ? cache.get(src) : undefined,
+    failed: !src,
+  }));
 
   useEffect(() => {
     if (!src) {
-      setUrl(undefined);
+      setResult({ failed: true });
       return;
     }
 
     const hit = cache.get(src);
     if (hit) {
-      setUrl(hit);
+      setResult({ url: hit, failed: false });
       return;
     }
 
-    setUrl(undefined);
+    setResult({ failed: false });
     if (!target) return;
 
     let live = true;
     const stopObserving = observePoster(target, () => {
-      const cached = cache.get(src);
-      if (cached) {
-        if (live) setUrl(cached);
-        return;
-      }
-
-      const pending = requests.get(src);
-      if (pending) {
-        pending.then((image) => live && setUrl(image)).catch(() => {});
-        return;
-      }
-
-      const request = invoke<string>("image", { url: src });
-      requests.set(src, request);
-      request
-        .then((data) => {
-          if (cache.size >= 500) {
-            const oldest = cache.keys().next().value;
-            if (oldest) cache.delete(oldest);
-          }
-          cache.set(src, data);
-          if (live) setUrl(data);
+      requestImage(src)
+        .then((image) => {
+          if (live) setResult({ url: image, failed: false });
         })
-        .catch(() => {})
-        .finally(() => requests.delete(src));
+        .catch(() => {
+          if (live) setResult({ failed: true });
+        });
     });
 
     return () => {
       live = false;
       stopObserving();
     };
-  }, [src, target]);
+  }, [src, target, retry]);
 
-  return url;
+  return result;
 }
 
 export function Img({ src, alt = "", className }: { src?: string; alt?: string; className?: string }) {
   const [target, setTarget] = useState<HTMLSpanElement | null>(null);
-  const url = useImage(src, target);
+  const [decodeRetry, setDecodeRetry] = useState(0);
+  const [decodeFailed, setDecodeFailed] = useState(false);
+  const { url, failed } = useImage(src, target, decodeRetry);
+
+  useEffect(() => {
+    setDecodeRetry(0);
+    setDecodeFailed(false);
+  }, [src]);
+
+  const handleImageError = () => {
+    if (src && decodeRetry < 1) {
+      cache.delete(src);
+      setDecodeRetry((current) => current + 1);
+      return;
+    }
+    setDecodeFailed(true);
+  };
+
+  if (!src || failed || decodeFailed) {
+    return (
+      <span className={`image-fallback${className ? ` ${className}` : ""}`} aria-hidden="true">
+        <span className="image-fallback-mark">A3</span>
+        <span className="image-fallback-label">ANIME3RB</span>
+      </span>
+    );
+  }
 
   if (!url) {
     return (
@@ -117,5 +167,5 @@ export function Img({ src, alt = "", className }: { src?: string; alt?: string; 
     );
   }
 
-  return <img className={className} src={url} alt={alt} loading="lazy" decoding="async" />;
+  return <img className={className} src={url} alt={alt} loading="lazy" decoding="async" onError={handleImageError} />;
 }
