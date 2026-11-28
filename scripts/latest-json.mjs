@@ -29,6 +29,18 @@ if (!version || !nsisInstaller || !nsisSignature || !msiInstaller || !msiSignatu
   process.exit(1);
 }
 
+const expectedInstallerPrefix = `Anime3rb_${version}_`;
+const mismatchedInstallers = [nsisInstaller, msiInstaller].filter(
+  (installer) => !basename(installer).startsWith(expectedInstallerPrefix),
+);
+if (mismatchedInstallers.length > 0) {
+  console.error(
+    `Installer filename version does not match release version ${version}`,
+    mismatchedInstallers.map(basename),
+  );
+  process.exit(1);
+}
+
 const base = `https://github.com/PanDuroDev/Anime3rb/releases/download/v${version}`;
 writeFileSync(
   join(dir, "latest.json"),
