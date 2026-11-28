@@ -22,6 +22,13 @@ on:
       - synchronize
       - reopened
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.1.6. Leave empty to build without releasing."
+        required: false
+      notes:
+        description: "Release notes"
+        required: false
 
 permissions:
   contents: read
@@ -31,11 +38,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    name: Bump version and tag
+    if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Bump version and tag
+        id: release
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must look like 1.2.3" >&2
+            exit 1
+          fi
+          sed -i -E "s/(\"version\": \")[^\"]*(\")/\1$version\2/" package.json src-tauri/tauri.conf.json
+          sed -i -E "s/^version = \"[^\"]*\"/version = \"$version\"/" src-tauri/Cargo.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release $version"
+          git tag "v$version"
+          git push origin HEAD:main
+          git push origin "v$version"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
   windows:
     name: Windows installer
+    needs: prepare
+    if: "!cancelled() && needs.prepare.result != 'failure'"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -70,9 +113,13 @@ jobs:
 
   android:
     name: Android APKs
+    needs: prepare
+    if: "!cancelled() && needs.prepare.result != 'failure'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -113,3 +160,31 @@ jobs:
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: Publish release
+    needs: [prepare, windows, android]
+    if: "!cancelled() && needs.prepare.result != 'failure' && (startsWith(github.ref, 'refs/tags/v') || inputs.version != '')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve version
+        id: v
+        run: |
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Anime3rb-v${{ steps.v.outputs.version }}-*
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          body: ${{ inputs.notes }}
+          files: dist/**
+          fail_on_unmatched_files: true

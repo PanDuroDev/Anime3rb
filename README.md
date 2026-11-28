@@ -70,7 +70,7 @@ npm run tauri android dev
 
 ## Prebuilt downloads
 
-Version **0.1.4** is built through GitHub Actions when its version metadata reaches `main`, when a
+Version **0.1.6** is built through GitHub Actions when its version metadata reaches `main`, when a
 `v*` tag is pushed, or when you manually run **Actions → Build Anime3rb → Run workflow**.
 
 Each successful run uploads two downloadable artifacts to its run page:
@@ -79,9 +79,19 @@ Each successful run uploads two downloadable artifacts to its run page:
 - **Android:** per-ABI debug APKs. The APKs are signed with the Android debug key; `arm64-v8a`
   is the usual choice for modern phones.
 
-Artifacts are retained for **30 days**. This workflow uploads to Actions only and does not create a
-GitHub Release. To publish a signed Android release APK later, configure a release keystore in
+Artifacts are retained for **30 days**. A `v*` tag also publishes a GitHub Release with the same
+files attached. To publish a signed Android release APK later, configure a release keystore in
 `src-tauri/gen/android/app/build.gradle.kts`.
+
+### Releasing without the CLI
+
+Run **Actions → Build Anime3rb → Run workflow** on `main` and fill in `version` (for example
+`0.1.6`) and optionally `notes`. The workflow bumps `package.json`, `src-tauri/Cargo.toml`, and
+`src-tauri/tauri.conf.json`, commits, tags `v0.1.6`, builds both platforms, and publishes the
+release. Leave `version` empty to build without releasing.
+
+The same run can be started from a GitHub MCP client such as ChatGPT with the GitHub connector,
+using the `actions_run_trigger` tool with `workflow_id: build.yml` and those inputs.
 
 ## Notes
 
