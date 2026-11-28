@@ -78,6 +78,7 @@ export default function UpdateBanner() {
       if (update.external) setUpdate(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      setProgress(null);
       setBusy(false);
     }
   };
