@@ -610,6 +610,7 @@ function WatchView({
     let live = true;
     setData(null);
     setError("");
+    setEpisodeQuery("");
     fetchAnime(url)
       .then((result) => live && setData(result))
       .catch((reason) => live && setError(String(reason)));
