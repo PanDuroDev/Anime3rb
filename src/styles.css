@@ -924,18 +924,19 @@ input { font: inherit; }
 .watch-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-width: 0;
   margin-bottom: 14px;
 }
 
 .watch-bar .back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 30ch;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  display: inline-grid;
+  flex: 0 0 36px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
 }
 
 .watch-bar .back svg { transform: rotate(180deg); fill: currentColor; }
@@ -1735,10 +1736,13 @@ input { font: inherit; }
   .episodes-toolbar { align-items: stretch; flex-direction: column; }
   .episode-search { flex-basis: auto; width: 100%; }
   .desc { -webkit-line-clamp: 3; }
-  .watch-bar { flex-wrap: wrap; gap: 10px; }
-  .watch-title { order: 1; flex-basis: 100%; }
-  .watch-nav { margin-inline-start: auto; }
-  .watch-nav .ghost { padding: 7px 12px; font-size: 13px; }
+  .watch-bar { gap: 8px; }
+  .watch-title { order: 1; flex: 1 1 auto; }
+  .watch-title h1 { font-size: 17px; }
+  .watch-nav { order: 2; flex: 0 0 auto; margin-inline-start: auto; }
+  .watch-nav .ghost { padding: 7px 9px; font-size: 12px; }
+  .watch-main { min-width: 0; margin-inline: -14px; }
+  .watch-main .player { width: 100%; }
   .watch-layout { grid-template-columns: 1fr; }
   .watch-side { position: static; max-height: 420px; }
   .ep-card.is-sidebar::after { -webkit-backdrop-filter: none; backdrop-filter: none; }

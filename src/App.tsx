@@ -748,8 +748,8 @@ function WatchView({
   return (
     <div className="watch-page">
       <div className="watch-bar">
-        <button className="ghost back" type="button" onClick={back} title={data.name}>
-          <Icon name="arrowRight" size={16} /> {data.name}
+        <button className="ghost back" type="button" onClick={back} aria-label="Back to anime" title="Back to anime">
+          <Icon name="arrowRight" size={16} />
         </button>
         <div className="watch-title">
           <h1>Episode {current.number}</h1>
