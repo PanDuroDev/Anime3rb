@@ -262,6 +262,9 @@ input { font: inherit; }
 .section-head.rail-head,
 .section-head.browse-head { align-items: center; }
 
+/* Keep carousel navigation at the far edge of each full-width section header. */
+.section-head.rail-head .rail-controls { margin-inline-start: auto; }
+
 .section-head.browse-head .count { margin-inline-start: auto; }
 
 .rail-controls {
