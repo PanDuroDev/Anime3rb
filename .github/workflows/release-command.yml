@@ -71,18 +71,19 @@ jobs:
               return;
             }
 
-            // build.yml cancels concurrent runs on main, so never overlap a release.
+            // build.yml cancels concurrent runs on main, so never overlap a release there.
+            // PR builds on other branches do not block a release.
             for (const status of ['in_progress', 'queued']) {
               const { data } = await github.rest.actions.listWorkflowRuns({
-                ...repo, workflow_id: 'build.yml', status, per_page: 1
+                ...repo, workflow_id: 'build.yml', branch: 'main', status, per_page: 1
               });
               if (data.total_count > 0) {
-                await say(`A build is already ${status}. Wait for it to finish, then comment again.`);
+                await say(`A build is already ${status} on main. Wait for it to finish, then comment again.`);
                 return;
               }
             }
 
-            const notes = body.split('\n').slice(1).join('\n').trim() || `Release ${version}`;
+            const notes = body.split('\n').slice(1).join('\n').trim();
             await github.rest.actions.createWorkflowDispatch({
               ...repo, workflow_id: 'build.yml', ref: 'main', inputs: { version, notes }
             });
