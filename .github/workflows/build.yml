@@ -163,7 +163,8 @@ jobs:
       - name: Use installed NDK
         run: echo "NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)" >> "$GITHUB_ENV"
 
-      - run: npm run tauri android init
+      - name: Initialize Android project with system bar handling
+        run: npm run android:init
       - run: npm run tauri android build -- --apk --debug --split-per-abi
 
       - name: Upload Android APKs
