@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactRoot = resolve(repoRoot, process.argv[2] ?? "dist");
 const version = process.env.VERSION;
+if (!version) {
+  throw new Error("VERSION is required so updater signatures can be checked against the release version");
+}
 const config = JSON.parse(readFileSync(join(repoRoot, "src-tauri/tauri.conf.json"), "utf8"));
 
 const publicKeyText = Buffer.from(config.plugins?.updater?.pubkey ?? "", "base64").toString("utf8");
@@ -65,8 +68,11 @@ for (const suffix of [".exe.sig", ".msi.sig"]) {
   if (signature[0] !== 0x45 || signature[1] !== 0x44) {
     throw new Error(`Expected a pre-hashed Minisign signature: ${basename(signaturePath)}`);
   }
-  if (!signature.subarray(2, 10).equals(publicKeyId)) {
-    throw new Error(`Signing key ID does not match tauri.conf.json: ${basename(signaturePath)}`);
+  const signatureKeyId = signature.subarray(2, 10);
+  if (!signatureKeyId.equals(publicKeyId)) {
+    throw new Error(
+      `Signing key ID mismatch for ${basename(artifactPath)}: signature ${signatureKeyId.toString("hex")}, app config ${publicKeyId.toString("hex")}. Check the GitHub Actions TAURI_SIGNING_PRIVATE_KEY secret.`,
+    );
   }
 
   const scalar = BigInt(`0x${Buffer.from(signature.subarray(42, 74)).reverse().toString("hex")}`);
@@ -78,7 +84,7 @@ for (const suffix of [".exe.sig", ".msi.sig"]) {
   const digest = createHash("blake2b512").update(artifact).digest();
   if (!verify(null, digest, publicKey, signature.subarray(10, 74))) {
     throw new Error(
-      `Artifact signature does not verify with tauri.conf.json public key: ${basename(artifactPath)}`,
+      `Cryptographic signature verification failed for ${basename(artifactPath)}. The artifact may be corrupted, or the GitHub Actions TAURI_SIGNING_PRIVATE_KEY secret does not contain the private key paired with the public key embedded in tauri.conf.json. Do not disable signature verification.`,
     );
   }
 
