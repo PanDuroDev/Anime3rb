@@ -8,6 +8,7 @@ import {
   Card,
   Episode,
   episodeCatalogThumbnail,
+  fillerClassifications as fetchFillerClassifications,
   Home,
   Progress,
   anime as fetchAnime,
@@ -482,7 +483,25 @@ function AnimeView({ url, play }: { url: string; play: (number: number) => void 
     setEpisodeQuery("");
     setEpisodePage(1);
     fetchAnime(url)
-      .then((result) => live && setData(result))
+      .then((result) => {
+        if (!live) return;
+        setData(result);
+        // Classification is fetched separately so provider latency never blocks the page.
+        fetchFillerClassifications(url, result.name)
+          .then((classifications) => {
+            if (!live) return;
+            setData((current) => current && current.url === url
+              ? {
+                  ...current,
+                  episodes: current.episodes.map((item) => ({
+                    ...item,
+                    filler: classifications[item.number],
+                  })),
+                }
+              : current);
+          })
+          .catch(() => {});
+      })
       .catch((reason) => live && setError(String(reason)));
     return () => {
       live = false;
@@ -644,7 +663,25 @@ function WatchView({
     setError("");
     setEpisodeQuery("");
     fetchAnime(url)
-      .then((result) => live && setData(result))
+      .then((result) => {
+        if (!live) return;
+        setData(result);
+        // Classification is fetched separately so provider latency never blocks the page.
+        fetchFillerClassifications(url, result.name)
+          .then((classifications) => {
+            if (!live) return;
+            setData((current) => current && current.url === url
+              ? {
+                  ...current,
+                  episodes: current.episodes.map((item) => ({
+                    ...item,
+                    filler: classifications[item.number],
+                  })),
+                }
+              : current);
+          })
+          .catch(() => {});
+      })
       .catch((reason) => live && setError(String(reason)));
     return () => {
       live = false;
