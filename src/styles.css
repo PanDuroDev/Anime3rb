@@ -291,6 +291,49 @@ input { font: inherit; }
 
 .rail-card { flex: 0 0 152px; width: 152px; min-width: 0; }
 
+.rail-item {
+  position: relative;
+  flex: 0 0 152px;
+  width: 152px;
+  min-width: 0;
+}
+
+.rail-item .rail-card {
+  flex: none;
+  width: 100%;
+}
+
+.rail-remove {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .78);
+  color: var(--white);
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+  transition: opacity .15s ease, background .15s ease, border-color .15s ease;
+}
+
+.rail-item:hover .rail-remove,
+.rail-item:focus-within .rail-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rail-remove:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
 .poster {
   position: relative;
   display: block;
@@ -1423,7 +1466,7 @@ input { font: inherit; }
   }
   .searchbox { grid-column: 1 / -1; max-width: none; order: 3; }
   .topnav { grid-column: 2; grid-row: 1; }
-  .rail-card { flex-basis: 128px; }
+  .rail-item { flex-basis: 128px; width: 128px; }
   /* Keep shelf controls reachable on touch screens without covering poster artwork. */
   .rail-arrow {
     top: -42px;
@@ -1467,6 +1510,8 @@ input { font: inherit; }
 }
 
 @media (hover: none), (pointer: coarse) {
+  .rail-remove { opacity: 1; pointer-events: auto; }
+
   .ep-card.is-grid .ep-text,
   .ep-card.is-sidebar .ep-text { opacity: 1; transform: none; }
   .ep-card.is-grid::after,
