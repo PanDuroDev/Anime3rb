@@ -901,6 +901,18 @@ input { font: inherit; }
 
 .side-list::-webkit-scrollbar { display: none; }
 
+.side-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12px;
+}
+.side-pagination .ghost { padding: 6px 9px; font-size: 12px; }
+
 .ep-card.is-sidebar {
   position: relative;
   display: flex;
@@ -1611,6 +1623,9 @@ input { font: inherit; }
   .watch-nav .ghost { padding: 7px 12px; font-size: 13px; }
   .watch-layout { grid-template-columns: 1fr; }
   .watch-side { position: static; max-height: 420px; }
+  .ep-card.is-sidebar::after { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .ep-card.is-sidebar .ep-thumb img { transform: none; }
+  .ep-card.is-sidebar { contain: content; }
   .controls { padding: 22px 8px 7px; }
   .row { flex-wrap: wrap; row-gap: 3px; }
   .btn { width: 34px; height: 34px; }
