@@ -92,7 +92,6 @@ input { font: inherit; }
   gap: 24px;
   padding: 16px 0;
   background: rgba(15, 15, 15, .9);
-  border-bottom: 1px solid rgba(44, 44, 44, .72);
   backdrop-filter: blur(12px);
 }
 
