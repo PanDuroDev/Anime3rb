@@ -54,7 +54,7 @@ Nogitsu's public API is free for non-commercial use with attribution. Episode ar
 with their respective source providers and are used only to identify the corresponding episode.
 The app credits Kitsu, AniZip and Nogitsu in its footer.
 
-Episode filler labels are best-effort metadata from [AniFillerPedia](https://anifillerpedia.wiki/docs/guide) and [FillerLists](https://fillerlists.com/data). AniFillerPedia episode records include citations and are licensed CC BY-NC-SA 4.0; FillerLists data is licensed CC BY-SA 4.0. The app displays a disagreement as **Disputed** and leaves episodes without a source record unclassified. These labels are informational fan references, not definitive canon rulings.
+Episode filler labels are best-effort metadata from [AniFillerPedia](https://anifillerpedia.wiki/docs/guide) and [FillerLists](https://fillerlists.com/data). AniFillerPedia episode records include citations and are licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/); use in a commercial product requires a separate agreement. FillerLists data is licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The app combines these datasets, credits both providers and their licences in the footer, displays a disagreement as **Disputed**, and leaves episodes without a source record unclassified. These labels are informational fan references, not definitive canon rulings.
 
 ## Development
 
