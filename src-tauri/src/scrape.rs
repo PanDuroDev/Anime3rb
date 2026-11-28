@@ -1426,7 +1426,7 @@ fn extract_video_sources_from_page(page: &str) -> Option<Vec<Value>> {
                     if depth == 0 {
                         if let Ok(sources) = parse_video_sources(&page[start..=index]) {
                             if !sources.is_empty()
-                                && best.as_ref().is_none_or(|current| sources.len() > current.len())
+                                && best.as_ref().map_or(true, |current| sources.len() > current.len())
                             {
                                 best = Some(sources);
                             }
