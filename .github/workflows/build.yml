@@ -103,6 +103,14 @@ jobs:
           workspaces: src-tauri
 
       - run: npm ci
+
+      - name: Verify updater signing key matches embedded public key
+        env:
+          VERSION: ${{ steps.app-version.outputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/verify-updater-keypair.mjs
+
       - run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
