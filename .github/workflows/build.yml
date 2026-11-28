@@ -104,6 +104,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Test updater signature verifier
+        run: node scripts/test-updater-signatures.mjs
+
       - name: Verify updater signing key matches embedded public key
         env:
           VERSION: ${{ steps.app-version.outputs.version }}
